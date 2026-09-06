@@ -37,8 +37,9 @@ description = "Install the lefthook git hooks"
 run = "lefthook install"
 
 [tasks.autocommit]
-description = "Commit staged changes with a message written by Claude"
+description = "Review a Claude-written commit message in the editor, then commit"
 dir = "{{config_root}}"
+raw = true
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -53,8 +54,13 @@ Conventional Commits: type(optional scope): subject, imperative mood, at most 72
 Add a body only when the change needs explaining, wrapped at 72 columns.
 Output the message and nothing else: no code fences, no commentary."
 
-if ! message=$({ git diff --cached --stat; git diff --cached; } | head -c 200000 |
-  claude -p --model sonnet --output-format text "$prompt"); then
+staged=$(mktemp)
+draft=$(mktemp)
+trap 'rm -f "$staged" "$draft"' EXIT
+
+{ git diff --cached --stat; git diff --cached; } | head -c 200000 > "$staged"
+
+if ! message=$(claude -p --model sonnet --output-format text "$prompt" < "$staged"); then
   echo "autocommit: claude failed: $message" >&2
   exit 1
 fi
@@ -64,12 +70,14 @@ if [ -z "$(printf %s "$message" | tr -d '[:space:]')" ]; then
   exit 1
 fi
 
-printf '%s\n\n' "$message"
-
 if [ -n "${AUTOCOMMIT_DRY_RUN:-}" ]; then
-  echo "autocommit: dry run, nothing committed"
+  printf '%s\n' "$message"
+  echo "autocommit: dry run, editor not opened"
   exit 0
 fi
 
-git commit -m "$message"
+printf '%s\n' "$message" > "$draft"
+
+# Opens the draft in the editor; saving commits, emptying it aborts.
+GIT_EDITOR="${GIT_EDITOR:-${EDITOR:-vim}}" git commit --edit --file "$draft"
 '''
