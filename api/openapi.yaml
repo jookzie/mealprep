@@ -1,0 +1,111 @@
+openapi: 3.0.3
+info:
+  title: Mealprep API
+  version: 0.1.0
+servers:
+  - url: /v1
+paths:
+  /meals:
+    get:
+      operationId: listMeals
+      summary: List all meals
+      responses:
+        "200":
+          description: The meals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListMealsResponse"
+    post:
+      operationId: createMeal
+      summary: Create a meal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMealRequest"
+      responses:
+        "201":
+          description: The created meal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateMealResponse"
+        "400":
+          description: The meal is not valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /meals/{mealId}:
+    get:
+      operationId: getMeal
+      summary: Fetch one meal
+      parameters:
+        - name: mealId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The meal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetMealResponse"
+        "404":
+          description: No meal with that id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    Meal:
+      type: object
+      required: [id, label, calories]
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        calories:
+          type: integer
+    ListMealsResponse:
+      type: object
+      required: [meals]
+      properties:
+        meals:
+          type: array
+          items:
+            $ref: "#/components/schemas/Meal"
+    GetMealResponse:
+      type: object
+      required: [meal]
+      properties:
+        meal:
+          $ref: "#/components/schemas/Meal"
+    CreateMealRequest:
+      type: object
+      required: [label, calories]
+      properties:
+        label:
+          type: string
+        calories:
+          type: integer
+    CreateMealResponse:
+      type: object
+      required: [meal]
+      properties:
+        meal:
+          $ref: "#/components/schemas/Meal"
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string

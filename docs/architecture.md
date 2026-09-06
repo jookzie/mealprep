@@ -7,17 +7,23 @@ browser (Svelte+TS+shadcn)  ──HTTP/JSON──▶  Go backend (Fiber)  ──
                                                    └──▶  Open Food Facts API
 ```
 
+## API contract
+`api/openapi.yaml` is the source of truth for the HTTP API. Go server code is generated
+from it with [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) (`fiber-v3-server`
+plus models) into `internal/api`, and the frontend client is generated from the same file.
+Regenerate with `mise run openapi:gen`; never edit `*.gen.go`.
+
 ## Backend layout
 ```
+api/openapi.yaml       the API contract, source of both generated sides
 cmd/app/main.go        entrypoint: create the application, Start, Shutdown on signal
 internal/
+  api/                 generated models and ServerInterface (do not edit)
   application/         wiring, config, logger, Fiber lifecycle
-  handler/             HTTP handlers, one sub-package per resource
-  service/             business logic, one sub-package per domain
-  repository/          persistence, one sub-package per store
-    sqlite/
-  client/              external APIs, one sub-package per API
-    openfoodfacts/
+  handler/<domain>/    ServerInterface implementations, DTO mapping, error to status
+  service/<domain>/    business logic, the errors it returns
+  repository/<db>/<domain>/   persistence, e.g. repository/sqlite/meal
+  client/<api>/        external APIs, e.g. client/openfoodfacts
   errorx/              structured error types shared across layers
 ```
 What belongs in a container package versus its sub-packages is covered in
@@ -33,6 +39,7 @@ What belongs in a container package versus its sub-packages is covered in
 - **Nutrients computed in the service layer**: meals and day plans store composition only; totals are derived on read.
 - **Config from the environment**: parsed once in `application`, with no defaults in code.
 - **Global logger**: one `zerolog`, configured in `application.New`.
+- **Spec-first API**: handlers implement a generated interface, so a route that drifts from `api/openapi.yaml` stops compiling.
 - **Placeholders allowed**: a package with no current need stays empty rather than speculative.
 
 ## Domain model

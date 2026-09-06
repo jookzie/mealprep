@@ -15,7 +15,9 @@ and, where marked, its overrides.
 - All code lives under `internal/`.
 - `handler`, `service`, `repository` and `client` are containers. Each holds either its implementation directly or sub-packages split by category.
 - Code in a container package is what its sub-packages share — common types and helpers. A single implementation's detail belongs in a sub-package, not in the container.
-- Split a container as soon as it holds more than one implementation, resource or domain.
+- `handler`, `service` and `repository` split by domain: `handler/meal`, `service/food`.
+- `repository` nests the database implementation first, then the domain: `repository/sqlite/meal`.
+- `client` splits by the API it talks to: `client/openfoodfacts`.
 - Every package carries a package comment stating its role.
 
 ### Files
@@ -26,6 +28,18 @@ and, where marked, its overrides.
 - A package that has to be constructed before it can be used holds a `new.go`, and that file holds `New`.
 - `New` returns the struct, or the struct and an error, and validates its input before returning it.
 - Up to two inputs are plain parameters. From three on they are grouped into a `Config` struct.
+
+### Generated code
+- `api/openapi.yaml` is the contract. Handlers implement the generated `ServerInterface`; routes are never declared by hand.
+- Generated files end in `.gen.go` and are edited only by regenerating them, through `mise run openapi:gen`.
+- The generated `ServerInterface` is the one interface a provider package may hand out, because the spec, not the package, defines it.
+
+### Handlers
+- A handler takes a `<Operation>Request` struct, unless its whole input is a single primitive.
+- A handler answers with a `<Operation>Response` struct. Never a bare domain value, a raw array or a map.
+- These DTOs exist to keep the wire shape explicit and independent of the domain types, so the schemas in `api/openapi.yaml` carry the suffixes and the generator produces them.
+- The handler function builds its response inline, field by field, from the domain value. No mapper helpers, no constructor methods, no shared conversion layer: the mapping is visible where the response is returned.
+- Domain types never reach the wire.
 
 ### Wiring
 - `cmd/app/main.go` carries no logic beyond starting and stopping the application.
@@ -48,6 +62,8 @@ and, where marked, its overrides.
 - Log through `log.Info()`, `log.Error()` and friends. Never `fmt.Println`.
 
 ### Errors
+- Errors are created in clients, repositories and services. Handlers create none; they translate.
+- A handler turns a service error into a status with a `switch` over the error, ending in a catch-all that answers 500.
 - Errors are returned, not logged, until the handler.
 - Sentinels are declared at the top of the file that returns them, one per error path, prefixed `Err` (`ErrMealNotFound`).
 - A sentinel is joined with its cause via `errors.Join` at exactly one point in the code.

@@ -16,6 +16,6 @@ func configureLogger(level string) error {
 		return errors.Join(ErrInvalidLogLevel, err)
 	}
 	zerolog.SetGlobalLevel(lvl)
-	log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
+	log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	return nil
 }

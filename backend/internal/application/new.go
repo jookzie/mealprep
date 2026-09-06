@@ -1,8 +1,12 @@
 package application
 
 import (
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/healthcheck"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/healthcheck"
+
+	"github.com/mertan/mealprep/internal/api"
+	mealhandler "github.com/mertan/mealprep/internal/handler/meal"
+	mealservice "github.com/mertan/mealprep/internal/service/meal"
 )
 
 func New() (Application, error) {
@@ -16,10 +20,10 @@ func New() (Application, error) {
 	}
 
 	server := fiber.New()
-	server.Use(healthcheck.New())
+	server.Get(healthcheck.LivenessEndpoint, healthcheck.New())
+	server.Get(healthcheck.ReadinessEndpoint, healthcheck.New())
 
-	// Versioned API root; handlers register their routes onto it as they land.
-	server.Group("v1")
+	api.RegisterHandlers(server.Group("/v1"), mealhandler.New(mealservice.New()))
 
 	return Application{cfg: cfg, fiber: server}, nil
 }

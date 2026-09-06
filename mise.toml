@@ -7,7 +7,7 @@ lefthook = "2.1.12"
 # Local development settings; see .env.example for the full set.
 _.file = ".env"
 
-[tasks.fmt]
+[tasks.format]
 description = "Format the Go codebase"
 dir = "{{config_root}}/backend"
 run = "golangci-lint fmt ./..."
@@ -27,7 +27,7 @@ description = "Run the Go tests"
 dir = "{{config_root}}/backend"
 run = "go test ./..."
 
-[tasks.run]
+[tasks.start]
 description = "Run the backend"
 dir = "{{config_root}}/backend"
 run = "go run ./cmd/app"
@@ -35,6 +35,11 @@ run = "go run ./cmd/app"
 [tasks.hooks]
 description = "Install the lefthook git hooks"
 run = "lefthook install"
+
+[tasks."openapi:gen"]
+description = "Regenerate the Go API from api/openapi.yaml"
+dir = "{{config_root}}/backend"
+run = "go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml"
 
 [tasks.autocommit]
 description = "Review a Claude-written commit message in the editor, then commit"
