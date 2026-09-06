@@ -51,7 +51,7 @@ fi
 
 prompt="Write a git commit message for the staged diff on stdin.
 Conventional Commits: type(optional scope): subject, imperative mood, at most 72 characters.
-Add a body only when the change needs explaining, wrapped at 72 columns.
+Add a body only if the diff is large. The body should list the changes, generalized into bullet points.
 Output the message and nothing else: no code fences, no commentary."
 
 staged=$(mktemp)
