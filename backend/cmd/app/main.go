@@ -1,13 +1,19 @@
+// Package main is the backend entrypoint.
 package main
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/mertan/mealprep/internal/application"
-	"github.com/rs/zerolog/log"
 )
+
+const shutdownTimeout = 5 * time.Second
 
 func main() {
 	app, err := application.New()
@@ -16,7 +22,7 @@ func main() {
 	}
 
 	go func() {
-		if err = app.Start(); err != nil {
+		if err := app.Start(); err != nil {
 			log.Fatal().Err(err).Msg("application stopped with error")
 		}
 	}()
@@ -25,7 +31,10 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	if err = app.Shutdown(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if err := app.Shutdown(ctx); err != nil {
 		log.Error().Err(err).Msg("failed to shut down application")
 	}
 }

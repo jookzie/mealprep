@@ -1,0 +1,75 @@
+[tools]
+go = "1.26.5"
+golangci-lint = "2.13.2"
+lefthook = "2.1.12"
+
+[env]
+# Local development settings; see .env.example for the full set.
+_.file = ".env"
+
+[tasks.fmt]
+description = "Format the Go codebase"
+dir = "{{config_root}}/backend"
+run = "golangci-lint fmt ./..."
+
+[tasks."fmt:check"]
+description = "Fail if the Go codebase is not formatted"
+dir = "{{config_root}}/backend"
+run = "golangci-lint fmt --diff ./..."
+
+[tasks.lint]
+description = "Lint the Go codebase"
+dir = "{{config_root}}/backend"
+run = "golangci-lint run ./..."
+
+[tasks.test]
+description = "Run the Go tests"
+dir = "{{config_root}}/backend"
+run = "go test ./..."
+
+[tasks.run]
+description = "Run the backend"
+dir = "{{config_root}}/backend"
+run = "go run ./cmd/app"
+
+[tasks.hooks]
+description = "Install the lefthook git hooks"
+run = "lefthook install"
+
+[tasks.autocommit]
+description = "Commit staged changes with a message written by Claude"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+if git diff --cached --quiet; then
+  echo "autocommit: nothing staged" >&2
+  exit 1
+fi
+
+prompt="Write a git commit message for the staged diff on stdin.
+Conventional Commits: type(optional scope): subject, imperative mood, at most 72 characters.
+Add a body only when the change needs explaining, wrapped at 72 columns.
+Output the message and nothing else: no code fences, no commentary."
+
+if ! message=$({ git diff --cached --stat; git diff --cached; } | head -c 200000 |
+  claude -p --model sonnet --output-format text "$prompt"); then
+  echo "autocommit: claude failed: $message" >&2
+  exit 1
+fi
+
+if [ -z "$(printf %s "$message" | tr -d '[:space:]')" ]; then
+  echo "autocommit: claude returned an empty message" >&2
+  exit 1
+fi
+
+printf '%s\n\n' "$message"
+
+if [ -n "${AUTOCOMMIT_DRY_RUN:-}" ]; then
+  echo "autocommit: dry run, nothing committed"
+  exit 0
+fi
+
+git commit -m "$message"
+'''

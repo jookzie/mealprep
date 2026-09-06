@@ -1,0 +1,27 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - misspell
+    - revive
+    - unconvert
+  exclusions:
+    rules:
+      # Placeholders and interface implementations legitimately ignore parameters.
+      - linters: [revive]
+        text: "unused-parameter"
+      # Doc comments are for the non-obvious; package comments are still required.
+      - linters: [revive]
+        text: "^exported:"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/mertan/mealprep
