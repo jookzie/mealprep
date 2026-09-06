@@ -15,6 +15,7 @@ internal/
   service/             business logic (nutrient computation, planning)
   repository/          persistence interfaces + SQLite implementation
   client/              external APIs (Open Food Facts)
+  errorx/              structured error types shared across layers
 ```
 
 ## Dependency direction

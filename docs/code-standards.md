@@ -8,7 +8,14 @@
 - Logging: global `zerolog` configured in `application.New`. Use `log.Info()`, `log.Error()`, etc.; never `fmt.Println`.
 - Repositories expose interfaces; SQLite types implement them. Services depend on interfaces only.
 - Keep unused packages as placeholders (a `doc.go` or empty file). Don't implement speculatively.
-- Errors are wrapped with context (`fmt.Errorf("...: %w", err)`) and returned, not logged, until the handler.
+- Errors are returned, not logged, until the handler.
+
+### Error handling
+- Sentinel errors are defined at the top of the file that uses them, one per error path.
+- Error variables are always prefixed with `Err` (e.g. `ErrMealNotFound`).
+- A sentinel is joined with another error (`errors.Join`) at exactly one point in the code.
+- Wrapping with context via `fmt.Errorf("...: %w", err)` is discouraged. Use sentinels and `internal/errorx` types instead.
+- `internal/errorx` holds structured error types (e.g. `ErrNotFound`) that carry resource, id and the internal error.
 - `gofmt` + `go vet` clean.
 
 ## Frontend
