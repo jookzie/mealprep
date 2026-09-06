@@ -43,8 +43,11 @@ What belongs in a container package versus its sub-packages is covered in
 - **Placeholders allowed**: a package with no current need stays empty rather than speculative.
 
 ## Domain model
-- `Food` — from Open Food Facts (id, name, nutrients per 100g).
-- `Meal` — label + list of (food, quantity).
+- `Product` — id, name, full nutrient set per 100 g or 100 ml. Snapshotted from Open Food Facts or created by the user.
+- `Meal` — label + list of (product, serving size in grams or millilitres).
 - `DayPlan` — label + list of meals.
 - `CalendarDay` — date → day plan.
-- `Targets` — calories, fat, protein, carbs.
+- `Targets` — energy (kcal), fat, protein, carbs.
+
+Every entity carries `created_at`, `updated_at` and `deleted_at`; deletes are soft.
+Energy is kcal, mass is grams, volume is millilitres.

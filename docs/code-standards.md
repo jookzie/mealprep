@@ -51,6 +51,11 @@ and, where marked, its overrides.
 - Use a pointer only where one is necessary: state that must not be copied (a `sync.Mutex`, a connection pool), mutation through the receiver, or a type that is nilable by design. Overrides [Receiver type](https://google.github.io/styleguide/go/decisions#receiver-type), which leaves the choice open for large structs.
 - A package that provides behaviour returns concrete types. It never declares an interface for its own implementation, and no package exists to hold interfaces for others ([Interfaces](https://google.github.io/styleguide/go/decisions#interfaces)).
 
+### Entities
+- Every persisted entity carries `created_at`, `updated_at` and `deleted_at`.
+- Deletes are soft: `deleted_at` is set and the row stays. Nothing removes rows.
+- Reads exclude soft-deleted rows unless a caller explicitly asks for them.
+
 ### Configuration
 - One `Config` struct, parsed with `caarlos0/env` in `application`. No `os.Getenv` elsewhere.
 - Every setting is required. No field carries a `required` tag.
