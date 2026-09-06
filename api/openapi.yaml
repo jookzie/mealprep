@@ -1,10 +1,139 @@
 openapi: 3.0.3
 info:
   title: Mealprep API
-  version: 0.1.0
+  version: 0.2.0
+  description: |
+    Energy is kcal, mass is grams, volume is millilitres. A product's macros and
+    nutrients are per 100 of its unit; a serving amount is in that same unit.
+    Every entity carries createdAt and updatedAt; deletes are soft and deleted
+    entities are never returned.
 servers:
   - url: /v1
+
 paths:
+  /products:
+    get:
+      operationId: listProducts
+      summary: List the user's products
+      responses:
+        "200":
+          description: The products
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListProductsResponse"
+    post:
+      operationId: createProduct
+      summary: Create a product by hand
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductRequest"
+      responses:
+        "201":
+          description: The created product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateProductResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /products/search:
+    get:
+      operationId: searchProducts
+      summary: Search the Open Food Facts catalog
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The catalog entries matching the query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchProductsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+  /products/import:
+    post:
+      operationId: importProduct
+      summary: Snapshot a catalog entry into the user's products
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportProductRequest"
+      responses:
+        "201":
+          description: The imported product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportProductResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: The catalog entry lacks one of the four macros
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+  /products/{productId}:
+    parameters:
+      - $ref: "#/components/parameters/ProductId"
+    get:
+      operationId: getProduct
+      summary: Fetch one product
+      responses:
+        "200":
+          description: The product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetProductResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateProduct
+      summary: Replace a product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductRequest"
+      responses:
+        "200":
+          description: The updated product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateProductResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteProduct
+      summary: Soft-delete a product
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /meals:
     get:
       operationId: listMeals
@@ -33,22 +162,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/CreateMealResponse"
         "400":
-          description: The meal is not valid
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+          $ref: "#/components/responses/BadRequest"
   /meals/{mealId}:
+    parameters:
+      - $ref: "#/components/parameters/MealId"
     get:
       operationId: getMeal
       summary: Fetch one meal
-      parameters:
-        - name: mealId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
       responses:
         "200":
           description: The meal
@@ -57,24 +177,419 @@ paths:
               schema:
                 $ref: "#/components/schemas/GetMealResponse"
         "404":
-          description: No meal with that id
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateMeal
+      summary: Replace a meal's label and servings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMealRequest"
+      responses:
+        "200":
+          description: The updated meal
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/UpdateMealResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteMeal
+      summary: Soft-delete a meal
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /day-plans:
+    get:
+      operationId: listDayPlans
+      summary: List all day plans
+      responses:
+        "200":
+          description: The day plans
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListDayPlansResponse"
+    post:
+      operationId: createDayPlan
+      summary: Create a day plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDayPlanRequest"
+      responses:
+        "201":
+          description: The created day plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateDayPlanResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /day-plans/{dayPlanId}:
+    parameters:
+      - $ref: "#/components/parameters/DayPlanId"
+    get:
+      operationId: getDayPlan
+      summary: Fetch one day plan
+      responses:
+        "200":
+          description: The day plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetDayPlanResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateDayPlan
+      summary: Replace a day plan's label and meals
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDayPlanRequest"
+      responses:
+        "200":
+          description: The updated day plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateDayPlanResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteDayPlan
+      summary: Soft-delete a day plan
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /calendar:
+    get:
+      operationId: listCalendarDays
+      summary: List the assigned days in a date range
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: The days with a plan, in date order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListCalendarDaysResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /calendar/{date}:
+    parameters:
+      - name: date
+        in: path
+        required: true
+        schema:
+          type: string
+          format: date
+    put:
+      operationId: assignCalendarDay
+      summary: Put a day plan on a date, replacing any existing one
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignCalendarDayRequest"
+      responses:
+        "200":
+          description: The assigned day
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignCalendarDayResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      operationId: unassignCalendarDay
+      summary: Clear the day plan from a date
+      responses:
+        "204":
+          description: Cleared
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /targets:
+    get:
+      operationId: getTargets
+      summary: Fetch the daily targets
+      responses:
+        "200":
+          description: The targets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetTargetsResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: setTargets
+      summary: Set the daily targets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetTargetsRequest"
+      responses:
+        "200":
+          description: The targets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetTargetsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
 components:
+  parameters:
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MealId:
+      name: mealId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DayPlanId:
+      name: dayPlanId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: The request is malformed or fails validation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: No such entity
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BadGateway:
+      description: Open Food Facts could not be reached or answered with an error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
   schemas:
+    Unit:
+      type: string
+      enum: [g, ml]
+    Macros:
+      type: object
+      required: [energyKcal, fatG, proteinG, carbohydratesG]
+      properties:
+        energyKcal:
+          type: number
+          format: double
+        fatG:
+          type: number
+          format: double
+        proteinG:
+          type: number
+          format: double
+        carbohydratesG:
+          type: number
+          format: double
+    Nutrients:
+      type: object
+      description: Every further nutrient per 100 units, keyed by name
+      additionalProperties:
+        type: number
+        format: double
+
+    Product:
+      type: object
+      required: [id, name, unit, macros, nutrients, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        unit:
+          $ref: "#/components/schemas/Unit"
+        macros:
+          $ref: "#/components/schemas/Macros"
+        nutrients:
+          $ref: "#/components/schemas/Nutrients"
+        sourceCode:
+          type: string
+          description: Open Food Facts code the snapshot came from; absent when created by hand
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ProductDraft:
+      type: object
+      required: [name, unit, macros]
+      properties:
+        name:
+          type: string
+        unit:
+          $ref: "#/components/schemas/Unit"
+        macros:
+          $ref: "#/components/schemas/Macros"
+        nutrients:
+          $ref: "#/components/schemas/Nutrients"
+    CatalogEntry:
+      type: object
+      required: [code, name, unit, macros, nutrients, complete]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        unit:
+          $ref: "#/components/schemas/Unit"
+        macros:
+          $ref: "#/components/schemas/Macros"
+        nutrients:
+          $ref: "#/components/schemas/Nutrients"
+        complete:
+          type: boolean
+          description: False when one of the four macros is missing, which makes the entry unimportable
+    ListProductsResponse:
+      type: object
+      required: [products]
+      properties:
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+    GetProductResponse:
+      type: object
+      required: [product]
+      properties:
+        product:
+          $ref: "#/components/schemas/Product"
+    CreateProductRequest:
+      $ref: "#/components/schemas/ProductDraft"
+    CreateProductResponse:
+      type: object
+      required: [product]
+      properties:
+        product:
+          $ref: "#/components/schemas/Product"
+    UpdateProductRequest:
+      $ref: "#/components/schemas/ProductDraft"
+    UpdateProductResponse:
+      type: object
+      required: [product]
+      properties:
+        product:
+          $ref: "#/components/schemas/Product"
+    SearchProductsResponse:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogEntry"
+    ImportProductRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+    ImportProductResponse:
+      type: object
+      required: [product]
+      properties:
+        product:
+          $ref: "#/components/schemas/Product"
+
+    Serving:
+      type: object
+      required: [productId, amount]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: double
+          description: In the product's unit
     Meal:
       type: object
-      required: [id, label, calories]
+      required: [id, label, servings, macros, createdAt, updatedAt]
       properties:
         id:
           type: string
           format: uuid
         label:
           type: string
-        calories:
-          type: integer
+        servings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Serving"
+        macros:
+          $ref: "#/components/schemas/Macros"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    MealDraft:
+      type: object
+      required: [label, servings]
+      properties:
+        label:
+          type: string
+        servings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Serving"
     ListMealsResponse:
       type: object
       required: [meals]
@@ -90,19 +605,165 @@ components:
         meal:
           $ref: "#/components/schemas/Meal"
     CreateMealRequest:
-      type: object
-      required: [label, calories]
-      properties:
-        label:
-          type: string
-        calories:
-          type: integer
+      $ref: "#/components/schemas/MealDraft"
     CreateMealResponse:
       type: object
       required: [meal]
       properties:
         meal:
           $ref: "#/components/schemas/Meal"
+    UpdateMealRequest:
+      $ref: "#/components/schemas/MealDraft"
+    UpdateMealResponse:
+      type: object
+      required: [meal]
+      properties:
+        meal:
+          $ref: "#/components/schemas/Meal"
+
+    DayPlanMeal:
+      type: object
+      required: [id, label, macros]
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        macros:
+          $ref: "#/components/schemas/Macros"
+    DayPlan:
+      type: object
+      required: [id, label, meals, macros, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        meals:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayPlanMeal"
+        macros:
+          $ref: "#/components/schemas/Macros"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    DayPlanDraft:
+      type: object
+      required: [label, mealIds]
+      properties:
+        label:
+          type: string
+        mealIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    ListDayPlansResponse:
+      type: object
+      required: [dayPlans]
+      properties:
+        dayPlans:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayPlan"
+    GetDayPlanResponse:
+      type: object
+      required: [dayPlan]
+      properties:
+        dayPlan:
+          $ref: "#/components/schemas/DayPlan"
+    CreateDayPlanRequest:
+      $ref: "#/components/schemas/DayPlanDraft"
+    CreateDayPlanResponse:
+      type: object
+      required: [dayPlan]
+      properties:
+        dayPlan:
+          $ref: "#/components/schemas/DayPlan"
+    UpdateDayPlanRequest:
+      $ref: "#/components/schemas/DayPlanDraft"
+    UpdateDayPlanResponse:
+      type: object
+      required: [dayPlan]
+      properties:
+        dayPlan:
+          $ref: "#/components/schemas/DayPlan"
+
+    CalendarDay:
+      type: object
+      required: [date, dayPlanId, createdAt, updatedAt]
+      properties:
+        date:
+          type: string
+          format: date
+        dayPlanId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ListCalendarDaysResponse:
+      type: object
+      required: [days]
+      properties:
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalendarDay"
+    AssignCalendarDayRequest:
+      type: object
+      required: [dayPlanId]
+      properties:
+        dayPlanId:
+          type: string
+          format: uuid
+    AssignCalendarDayResponse:
+      type: object
+      required: [day]
+      properties:
+        day:
+          $ref: "#/components/schemas/CalendarDay"
+
+    Targets:
+      type: object
+      required: [macros, createdAt, updatedAt]
+      properties:
+        macros:
+          $ref: "#/components/schemas/Macros"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    GetTargetsResponse:
+      type: object
+      required: [targets]
+      properties:
+        targets:
+          $ref: "#/components/schemas/Targets"
+    SetTargetsRequest:
+      type: object
+      required: [macros]
+      properties:
+        macros:
+          $ref: "#/components/schemas/Macros"
+    SetTargetsResponse:
+      type: object
+      required: [targets]
+      properties:
+        targets:
+          $ref: "#/components/schemas/Targets"
+
     ErrorResponse:
       type: object
       required: [message]

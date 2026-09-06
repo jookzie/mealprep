@@ -1,3 +1,64 @@
-*.db
-frontend/node_modules/
+# Go https://github.com/github/gitignore/blob/main/Go.gitignore
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# env file
 .env
+.env.test
+
+# Editor/IDE
+.idea/
+.vscode/
+
+ # SQLite database
+*.db
+ *.db*
+
+ # Svelte https://github.com/sveltejs/svelte/blob/main/.gitignore
+ # Dependency directories
+node_modules/
+
+ # IDE related
+.idea
+
+ # Test coverage
+coverage
+*.lcov
+
+ # Optional eslint cache
+.eslintcache
+
+ # build output
+.vercel
+
+ # OS-specific
+.DS_Store
+
+tmp
+packages/svelte/scripts/_baseline/
+
+benchmarking/.profiles
+benchmarking/compare/.results
+benchmarking/compare/.profiles
+benchmarking/compare/results.html
+frontend/node_modules/

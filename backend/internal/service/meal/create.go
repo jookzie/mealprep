@@ -1,26 +1,25 @@
 package meal
 
 import (
-	"errors"
+	"context"
 
 	"github.com/google/uuid"
+
+	"github.com/mertan/mealprep/internal/domain"
 )
 
-var ErrInvalidMeal = errors.New("invalid meal")
-
-func (s *Service) Create(label string, calories int) (Meal, error) {
-	if label == "" {
-		return Meal{}, errors.Join(ErrInvalidMeal, errors.New("label is empty"))
+func (s Service) Create(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
+	if err := validate(meal); err != nil {
+		return domain.Meal{}, err
 	}
-	if calories <= 0 {
-		return Meal{}, errors.Join(ErrInvalidMeal, errors.New("calories must be positive"))
+	if _, err := s.resolve(ctx, []domain.Meal{meal}, true); err != nil {
+		return domain.Meal{}, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	created := Meal{ID: uuid.New(), Label: label, Calories: calories}
-	s.meals = append(s.meals, created)
-
-	return created, nil
+	meal.ID = uuid.New()
+	created, err := s.repository.Create(ctx, meal)
+	if err != nil {
+		return domain.Meal{}, err
+	}
+	return s.Get(ctx, created.ID)
 }

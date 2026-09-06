@@ -1,23 +1,22 @@
 // Package errorx holds structured error types shared across layers.
 package errorx
 
-import (
-	"fmt"
-
-	"github.com/google/uuid"
-)
+import "fmt"
 
 type ErrNotFound struct {
 	Resource string
-	ID       uuid.UUID
+	ID       string
 	Internal error
 }
 
-func NotFound(resource string, id uuid.UUID, internal error) ErrNotFound {
+func NotFound(resource, id string, internal error) ErrNotFound {
 	return ErrNotFound{Resource: resource, ID: id, Internal: internal}
 }
 
 func (e ErrNotFound) Error() string {
+	if e.Internal == nil {
+		return fmt.Sprintf("%s not found with id = '%s'", e.Resource, e.ID)
+	}
 	return fmt.Sprintf("%s not found with id = '%s': %v", e.Resource, e.ID, e.Internal)
 }
 

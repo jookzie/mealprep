@@ -1,21 +1,27 @@
-// Package meal holds the meal domain logic.
+// Package meal holds the meal domain logic, including deriving a meal's macros.
 package meal
 
 import (
-	"sync"
+	"context"
 
 	"github.com/google/uuid"
+
+	"github.com/mertan/mealprep/internal/domain"
 )
 
-type Meal struct {
-	ID       uuid.UUID
-	Label    string
-	Calories int
+type Repository interface {
+	Create(ctx context.Context, meal domain.Meal) (domain.Meal, error)
+	Get(ctx context.Context, id uuid.UUID) (domain.Meal, error)
+	List(ctx context.Context) ([]domain.Meal, error)
+	Update(ctx context.Context, meal domain.Meal) (domain.Meal, error)
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
-// Service keeps meals in memory until a repository exists, so it carries a mutex
-// and is used through a pointer.
+type Products interface {
+	ListByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.Product, error)
+}
+
 type Service struct {
-	mu    sync.RWMutex
-	meals []Meal
+	repository Repository
+	products   Products
 }

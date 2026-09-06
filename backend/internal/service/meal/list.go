@@ -1,8 +1,15 @@
 package meal
 
-func (s *Service) List() []Meal {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+import (
+	"context"
 
-	return append([]Meal(nil), s.meals...)
+	"github.com/mertan/mealprep/internal/domain"
+)
+
+func (s Service) List(ctx context.Context) ([]domain.Meal, error) {
+	meals, err := s.repository.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.derive(ctx, meals)
 }

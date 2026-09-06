@@ -2,6 +2,7 @@
 go = "1.26.5"
 golangci-lint = "2.13.2"
 lefthook = "2.1.12"
+sqlc = "1.31.1"
 
 [env]
 # Local development settings; see .env.example for the full set.
@@ -12,7 +13,7 @@ description = "Format the Go codebase"
 dir = "{{config_root}}/backend"
 run = "golangci-lint fmt ./..."
 
-[tasks."fmt:check"]
+[tasks."format:check"]
 description = "Fail if the Go codebase is not formatted"
 dir = "{{config_root}}/backend"
 run = "golangci-lint fmt --diff ./..."
@@ -40,6 +41,11 @@ run = "lefthook install"
 description = "Regenerate the Go API from api/openapi.yaml"
 dir = "{{config_root}}/backend"
 run = "go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml"
+
+[tasks."sqlc:gen"]
+description = "Regenerate the SQLite data access layer from backend/sqlc/sqlite"
+dir = "{{config_root}}/backend"
+run = "sqlc generate"
 
 [tasks.autocommit]
 description = "Review a Claude-written commit message in the editor, then commit"

@@ -5,21 +5,109 @@ package api
 
 import (
 	"fmt"
+	"net/url"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-// CreateMealRequest defines model for CreateMealRequest.
-type CreateMealRequest struct {
-	Calories int    `json:"calories"`
-	Label    string `json:"label"`
+// Defines values for Unit.
+const (
+	G  Unit = "g"
+	Ml Unit = "ml"
+)
+
+// Valid indicates whether the value is a known member of the Unit enum.
+func (e Unit) Valid() bool {
+	switch e {
+	case G:
+		return true
+	case Ml:
+		return true
+	default:
+		return false
+	}
 }
+
+// AssignCalendarDayRequest defines model for AssignCalendarDayRequest.
+type AssignCalendarDayRequest struct {
+	DayPlanId openapi_types.UUID `json:"dayPlanId"`
+}
+
+// AssignCalendarDayResponse defines model for AssignCalendarDayResponse.
+type AssignCalendarDayResponse struct {
+	Day CalendarDay `json:"day"`
+}
+
+// CalendarDay defines model for CalendarDay.
+type CalendarDay struct {
+	CreatedAt time.Time          `json:"createdAt"`
+	Date      openapi_types.Date `json:"date"`
+	DayPlanId openapi_types.UUID `json:"dayPlanId"`
+	UpdatedAt time.Time          `json:"updatedAt"`
+}
+
+// CatalogEntry defines model for CatalogEntry.
+type CatalogEntry struct {
+	Code string `json:"code"`
+
+	// Complete False when one of the four macros is missing, which makes the entry unimportable
+	Complete bool   `json:"complete"`
+	Macros   Macros `json:"macros"`
+	Name     string `json:"name"`
+
+	// Nutrients Every further nutrient per 100 units, keyed by name
+	Nutrients Nutrients `json:"nutrients"`
+	Unit      Unit      `json:"unit"`
+}
+
+// CreateDayPlanRequest defines model for CreateDayPlanRequest.
+type CreateDayPlanRequest = DayPlanDraft
+
+// CreateDayPlanResponse defines model for CreateDayPlanResponse.
+type CreateDayPlanResponse struct {
+	DayPlan DayPlan `json:"dayPlan"`
+}
+
+// CreateMealRequest defines model for CreateMealRequest.
+type CreateMealRequest = MealDraft
 
 // CreateMealResponse defines model for CreateMealResponse.
 type CreateMealResponse struct {
 	Meal Meal `json:"meal"`
+}
+
+// CreateProductRequest defines model for CreateProductRequest.
+type CreateProductRequest = ProductDraft
+
+// CreateProductResponse defines model for CreateProductResponse.
+type CreateProductResponse struct {
+	Product Product `json:"product"`
+}
+
+// DayPlan defines model for DayPlan.
+type DayPlan struct {
+	CreatedAt time.Time          `json:"createdAt"`
+	Id        openapi_types.UUID `json:"id"`
+	Label     string             `json:"label"`
+	Macros    Macros             `json:"macros"`
+	Meals     []DayPlanMeal      `json:"meals"`
+	UpdatedAt time.Time          `json:"updatedAt"`
+}
+
+// DayPlanDraft defines model for DayPlanDraft.
+type DayPlanDraft struct {
+	Label   string               `json:"label"`
+	MealIds []openapi_types.UUID `json:"mealIds"`
+}
+
+// DayPlanMeal defines model for DayPlanMeal.
+type DayPlanMeal struct {
+	Id     openapi_types.UUID `json:"id"`
+	Label  string             `json:"label"`
+	Macros Macros             `json:"macros"`
 }
 
 // ErrorResponse defines model for ErrorResponse.
@@ -27,9 +115,44 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
+// GetDayPlanResponse defines model for GetDayPlanResponse.
+type GetDayPlanResponse struct {
+	DayPlan DayPlan `json:"dayPlan"`
+}
+
 // GetMealResponse defines model for GetMealResponse.
 type GetMealResponse struct {
 	Meal Meal `json:"meal"`
+}
+
+// GetProductResponse defines model for GetProductResponse.
+type GetProductResponse struct {
+	Product Product `json:"product"`
+}
+
+// GetTargetsResponse defines model for GetTargetsResponse.
+type GetTargetsResponse struct {
+	Targets Targets `json:"targets"`
+}
+
+// ImportProductRequest defines model for ImportProductRequest.
+type ImportProductRequest struct {
+	Code string `json:"code"`
+}
+
+// ImportProductResponse defines model for ImportProductResponse.
+type ImportProductResponse struct {
+	Product Product `json:"product"`
+}
+
+// ListCalendarDaysResponse defines model for ListCalendarDaysResponse.
+type ListCalendarDaysResponse struct {
+	Days []CalendarDay `json:"days"`
+}
+
+// ListDayPlansResponse defines model for ListDayPlansResponse.
+type ListDayPlansResponse struct {
+	DayPlans []DayPlan `json:"dayPlans"`
 }
 
 // ListMealsResponse defines model for ListMealsResponse.
@@ -37,27 +160,244 @@ type ListMealsResponse struct {
 	Meals []Meal `json:"meals"`
 }
 
+// ListProductsResponse defines model for ListProductsResponse.
+type ListProductsResponse struct {
+	Products []Product `json:"products"`
+}
+
+// Macros defines model for Macros.
+type Macros struct {
+	CarbohydratesG float64 `json:"carbohydratesG"`
+	EnergyKcal     float64 `json:"energyKcal"`
+	FatG           float64 `json:"fatG"`
+	ProteinG       float64 `json:"proteinG"`
+}
+
 // Meal defines model for Meal.
 type Meal struct {
-	Calories int                `json:"calories"`
-	Id       openapi_types.UUID `json:"id"`
-	Label    string             `json:"label"`
+	CreatedAt time.Time          `json:"createdAt"`
+	Id        openapi_types.UUID `json:"id"`
+	Label     string             `json:"label"`
+	Macros    Macros             `json:"macros"`
+	Servings  []Serving          `json:"servings"`
+	UpdatedAt time.Time          `json:"updatedAt"`
 }
+
+// MealDraft defines model for MealDraft.
+type MealDraft struct {
+	Label    string    `json:"label"`
+	Servings []Serving `json:"servings"`
+}
+
+// Nutrients Every further nutrient per 100 units, keyed by name
+type Nutrients map[string]float64
+
+// Product defines model for Product.
+type Product struct {
+	CreatedAt time.Time          `json:"createdAt"`
+	Id        openapi_types.UUID `json:"id"`
+	Macros    Macros             `json:"macros"`
+	Name      string             `json:"name"`
+
+	// Nutrients Every further nutrient per 100 units, keyed by name
+	Nutrients Nutrients `json:"nutrients"`
+
+	// SourceCode Open Food Facts code the snapshot came from; absent when created by hand
+	SourceCode *string   `json:"sourceCode,omitempty"`
+	Unit       Unit      `json:"unit"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+// ProductDraft defines model for ProductDraft.
+type ProductDraft struct {
+	Macros Macros `json:"macros"`
+	Name   string `json:"name"`
+
+	// Nutrients Every further nutrient per 100 units, keyed by name
+	Nutrients *Nutrients `json:"nutrients,omitempty"`
+	Unit      Unit       `json:"unit"`
+}
+
+// SearchProductsResponse defines model for SearchProductsResponse.
+type SearchProductsResponse struct {
+	Entries []CatalogEntry `json:"entries"`
+}
+
+// Serving defines model for Serving.
+type Serving struct {
+	// Amount In the product's unit
+	Amount    float64            `json:"amount"`
+	ProductId openapi_types.UUID `json:"productId"`
+}
+
+// SetTargetsRequest defines model for SetTargetsRequest.
+type SetTargetsRequest struct {
+	Macros Macros `json:"macros"`
+}
+
+// SetTargetsResponse defines model for SetTargetsResponse.
+type SetTargetsResponse struct {
+	Targets Targets `json:"targets"`
+}
+
+// Targets defines model for Targets.
+type Targets struct {
+	CreatedAt time.Time `json:"createdAt"`
+	Macros    Macros    `json:"macros"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// Unit defines model for Unit.
+type Unit string
+
+// UpdateDayPlanRequest defines model for UpdateDayPlanRequest.
+type UpdateDayPlanRequest = DayPlanDraft
+
+// UpdateDayPlanResponse defines model for UpdateDayPlanResponse.
+type UpdateDayPlanResponse struct {
+	DayPlan DayPlan `json:"dayPlan"`
+}
+
+// UpdateMealRequest defines model for UpdateMealRequest.
+type UpdateMealRequest = MealDraft
+
+// UpdateMealResponse defines model for UpdateMealResponse.
+type UpdateMealResponse struct {
+	Meal Meal `json:"meal"`
+}
+
+// UpdateProductRequest defines model for UpdateProductRequest.
+type UpdateProductRequest = ProductDraft
+
+// UpdateProductResponse defines model for UpdateProductResponse.
+type UpdateProductResponse struct {
+	Product Product `json:"product"`
+}
+
+// DayPlanId defines model for DayPlanId.
+type DayPlanId = openapi_types.UUID
+
+// MealId defines model for MealId.
+type MealId = openapi_types.UUID
+
+// ProductId defines model for ProductId.
+type ProductId = openapi_types.UUID
+
+// BadGateway defines model for BadGateway.
+type BadGateway = ErrorResponse
+
+// BadRequest defines model for BadRequest.
+type BadRequest = ErrorResponse
+
+// NotFound defines model for NotFound.
+type NotFound = ErrorResponse
+
+// ListCalendarDaysParams defines parameters for ListCalendarDays.
+type ListCalendarDaysParams struct {
+	From openapi_types.Date `form:"from" json:"from"`
+	To   openapi_types.Date `form:"to" json:"to"`
+}
+
+// SearchProductsParams defines parameters for SearchProducts.
+type SearchProductsParams struct {
+	Q string `form:"q" json:"q"`
+}
+
+// AssignCalendarDayJSONRequestBody defines body for AssignCalendarDay for application/json ContentType.
+type AssignCalendarDayJSONRequestBody = AssignCalendarDayRequest
+
+// CreateDayPlanJSONRequestBody defines body for CreateDayPlan for application/json ContentType.
+type CreateDayPlanJSONRequestBody = CreateDayPlanRequest
+
+// UpdateDayPlanJSONRequestBody defines body for UpdateDayPlan for application/json ContentType.
+type UpdateDayPlanJSONRequestBody = UpdateDayPlanRequest
 
 // CreateMealJSONRequestBody defines body for CreateMeal for application/json ContentType.
 type CreateMealJSONRequestBody = CreateMealRequest
 
+// UpdateMealJSONRequestBody defines body for UpdateMeal for application/json ContentType.
+type UpdateMealJSONRequestBody = UpdateMealRequest
+
+// CreateProductJSONRequestBody defines body for CreateProduct for application/json ContentType.
+type CreateProductJSONRequestBody = CreateProductRequest
+
+// ImportProductJSONRequestBody defines body for ImportProduct for application/json ContentType.
+type ImportProductJSONRequestBody = ImportProductRequest
+
+// UpdateProductJSONRequestBody defines body for UpdateProduct for application/json ContentType.
+type UpdateProductJSONRequestBody = UpdateProductRequest
+
+// SetTargetsJSONRequestBody defines body for SetTargets for application/json ContentType.
+type SetTargetsJSONRequestBody = SetTargetsRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ListCalendarDays List the assigned days in a date range
+	// (GET /calendar)
+	ListCalendarDays(c fiber.Ctx, params ListCalendarDaysParams) error
+	// UnassignCalendarDay Clear the day plan from a date
+	// (DELETE /calendar/{date})
+	UnassignCalendarDay(c fiber.Ctx, date openapi_types.Date) error
+	// AssignCalendarDay Put a day plan on a date, replacing any existing one
+	// (PUT /calendar/{date})
+	AssignCalendarDay(c fiber.Ctx, date openapi_types.Date) error
+	// ListDayPlans List all day plans
+	// (GET /day-plans)
+	ListDayPlans(c fiber.Ctx) error
+	// CreateDayPlan Create a day plan
+	// (POST /day-plans)
+	CreateDayPlan(c fiber.Ctx) error
+	// DeleteDayPlan Soft-delete a day plan
+	// (DELETE /day-plans/{dayPlanId})
+	DeleteDayPlan(c fiber.Ctx, dayPlanId DayPlanId) error
+	// GetDayPlan Fetch one day plan
+	// (GET /day-plans/{dayPlanId})
+	GetDayPlan(c fiber.Ctx, dayPlanId DayPlanId) error
+	// UpdateDayPlan Replace a day plan's label and meals
+	// (PUT /day-plans/{dayPlanId})
+	UpdateDayPlan(c fiber.Ctx, dayPlanId DayPlanId) error
 	// ListMeals List all meals
 	// (GET /meals)
 	ListMeals(c fiber.Ctx) error
 	// CreateMeal Create a meal
 	// (POST /meals)
 	CreateMeal(c fiber.Ctx) error
+	// DeleteMeal Soft-delete a meal
+	// (DELETE /meals/{mealId})
+	DeleteMeal(c fiber.Ctx, mealId MealId) error
 	// GetMeal Fetch one meal
 	// (GET /meals/{mealId})
-	GetMeal(c fiber.Ctx, mealId openapi_types.UUID) error
+	GetMeal(c fiber.Ctx, mealId MealId) error
+	// UpdateMeal Replace a meal's label and servings
+	// (PUT /meals/{mealId})
+	UpdateMeal(c fiber.Ctx, mealId MealId) error
+	// ListProducts List the user's products
+	// (GET /products)
+	ListProducts(c fiber.Ctx) error
+	// CreateProduct Create a product by hand
+	// (POST /products)
+	CreateProduct(c fiber.Ctx) error
+	// ImportProduct Snapshot a catalog entry into the user's products
+	// (POST /products/import)
+	ImportProduct(c fiber.Ctx) error
+	// SearchProducts Search the Open Food Facts catalog
+	// (GET /products/search)
+	SearchProducts(c fiber.Ctx, params SearchProductsParams) error
+	// DeleteProduct Soft-delete a product
+	// (DELETE /products/{productId})
+	DeleteProduct(c fiber.Ctx, productId ProductId) error
+	// GetProduct Fetch one product
+	// (GET /products/{productId})
+	GetProduct(c fiber.Ctx, productId ProductId) error
+	// UpdateProduct Replace a product
+	// (PUT /products/{productId})
+	UpdateProduct(c fiber.Ctx, productId ProductId) error
+	// GetTargets Fetch the daily targets
+	// (GET /targets)
+	GetTargets(c fiber.Ctx) error
+	// SetTargets Set the daily targets
+	// (PUT /targets)
+	SetTargets(c fiber.Ctx) error
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -68,6 +408,231 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc fiber.Handler
 type HandlerMiddlewareFunc func(c fiber.Ctx, next fiber.Handler) error
+
+// ListCalendarDays operation middleware
+func (siw *ServerInterfaceWrapper) ListCalendarDays(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCalendarDaysParams
+
+	var query url.Values
+	query, err = url.ParseQuery(string(c.Request().URI().QueryString()))
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for query string: %w", err).Error())
+	}
+
+	// ------------- Required query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "from", query, &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter from: %w", err).Error())
+	}
+
+	// ------------- Required query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "to", query, &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter to: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.ListCalendarDays(c, params)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// UnassignCalendarDay operation middleware
+func (siw *ServerInterfaceWrapper) UnassignCalendarDay(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "date" -------------
+	var date openapi_types.Date
+
+	err = runtime.BindStyledParameterWithOptions("simple", "date", c.Params("date"), &date, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "date"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter date: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.UnassignCalendarDay(c, date)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// AssignCalendarDay operation middleware
+func (siw *ServerInterfaceWrapper) AssignCalendarDay(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "date" -------------
+	var date openapi_types.Date
+
+	err = runtime.BindStyledParameterWithOptions("simple", "date", c.Params("date"), &date, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "date"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter date: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.AssignCalendarDay(c, date)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// ListDayPlans operation middleware
+func (siw *ServerInterfaceWrapper) ListDayPlans(c fiber.Ctx) error {
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.ListDayPlans(c)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// CreateDayPlan operation middleware
+func (siw *ServerInterfaceWrapper) CreateDayPlan(c fiber.Ctx) error {
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.CreateDayPlan(c)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// DeleteDayPlan operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDayPlan(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "dayPlanId" -------------
+	var dayPlanId DayPlanId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "dayPlanId", c.Params("dayPlanId"), &dayPlanId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter dayPlanId: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.DeleteDayPlan(c, dayPlanId)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// GetDayPlan operation middleware
+func (siw *ServerInterfaceWrapper) GetDayPlan(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "dayPlanId" -------------
+	var dayPlanId DayPlanId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "dayPlanId", c.Params("dayPlanId"), &dayPlanId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter dayPlanId: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.GetDayPlan(c, dayPlanId)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// UpdateDayPlan operation middleware
+func (siw *ServerInterfaceWrapper) UpdateDayPlan(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "dayPlanId" -------------
+	var dayPlanId DayPlanId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "dayPlanId", c.Params("dayPlanId"), &dayPlanId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter dayPlanId: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.UpdateDayPlan(c, dayPlanId)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
 
 // ListMeals operation middleware
 func (siw *ServerInterfaceWrapper) ListMeals(c fiber.Ctx) error {
@@ -105,6 +670,35 @@ func (siw *ServerInterfaceWrapper) CreateMeal(c fiber.Ctx) error {
 	return handler(c)
 }
 
+// DeleteMeal operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMeal(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "mealId" -------------
+	var mealId MealId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "mealId", c.Params("mealId"), &mealId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter mealId: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.DeleteMeal(c, mealId)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
 // GetMeal operation middleware
 func (siw *ServerInterfaceWrapper) GetMeal(c fiber.Ctx) error {
 
@@ -112,7 +706,7 @@ func (siw *ServerInterfaceWrapper) GetMeal(c fiber.Ctx) error {
 	_ = err
 
 	// ------------- Path parameter "mealId" -------------
-	var mealId openapi_types.UUID
+	var mealId MealId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "mealId", c.Params("mealId"), &mealId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
 	if err != nil {
@@ -121,6 +715,249 @@ func (siw *ServerInterfaceWrapper) GetMeal(c fiber.Ctx) error {
 
 	handler := func(c fiber.Ctx) error {
 		return siw.Handler.GetMeal(c, mealId)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// UpdateMeal operation middleware
+func (siw *ServerInterfaceWrapper) UpdateMeal(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "mealId" -------------
+	var mealId MealId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "mealId", c.Params("mealId"), &mealId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter mealId: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.UpdateMeal(c, mealId)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// ListProducts operation middleware
+func (siw *ServerInterfaceWrapper) ListProducts(c fiber.Ctx) error {
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.ListProducts(c)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// CreateProduct operation middleware
+func (siw *ServerInterfaceWrapper) CreateProduct(c fiber.Ctx) error {
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.CreateProduct(c)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// ImportProduct operation middleware
+func (siw *ServerInterfaceWrapper) ImportProduct(c fiber.Ctx) error {
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.ImportProduct(c)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// SearchProducts operation middleware
+func (siw *ServerInterfaceWrapper) SearchProducts(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SearchProductsParams
+
+	var query url.Values
+	query, err = url.ParseQuery(string(c.Request().URI().QueryString()))
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for query string: %w", err).Error())
+	}
+
+	// ------------- Required query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "q", query, &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter q: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.SearchProducts(c, params)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// DeleteProduct operation middleware
+func (siw *ServerInterfaceWrapper) DeleteProduct(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "productId" -------------
+	var productId ProductId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "productId", c.Params("productId"), &productId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter productId: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.DeleteProduct(c, productId)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// GetProduct operation middleware
+func (siw *ServerInterfaceWrapper) GetProduct(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "productId" -------------
+	var productId ProductId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "productId", c.Params("productId"), &productId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter productId: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.GetProduct(c, productId)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// UpdateProduct operation middleware
+func (siw *ServerInterfaceWrapper) UpdateProduct(c fiber.Ctx) error {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "productId" -------------
+	var productId ProductId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "productId", c.Params("productId"), &productId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter productId: %w", err).Error())
+	}
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.UpdateProduct(c, productId)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// GetTargets operation middleware
+func (siw *ServerInterfaceWrapper) GetTargets(c fiber.Ctx) error {
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.GetTargets(c)
+	}
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		m := siw.HandlerMiddlewares[i]
+		next := handler
+		handler = func(c fiber.Ctx) error {
+			return m(c, next)
+		}
+	}
+
+	return handler(c)
+}
+
+// SetTargets operation middleware
+func (siw *ServerInterfaceWrapper) SetTargets(c fiber.Ctx) error {
+
+	handler := func(c fiber.Ctx) error {
+		return siw.Handler.SetTargets(c)
 	}
 
 	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
@@ -157,10 +994,48 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 		router.Use(fiber.Handler(m))
 	}
 
+	router.Get(options.BaseURL+"/products", wrapper.ListProducts)
+
+	router.Post(options.BaseURL+"/products", wrapper.CreateProduct)
+
+	router.Get(options.BaseURL+"/products/search", wrapper.SearchProducts)
+
+	router.Post(options.BaseURL+"/products/import", wrapper.ImportProduct)
+
+	router.Delete(options.BaseURL+"/products/:productId", wrapper.DeleteProduct)
+
+	router.Get(options.BaseURL+"/products/:productId", wrapper.GetProduct)
+
+	router.Put(options.BaseURL+"/products/:productId", wrapper.UpdateProduct)
+
 	router.Get(options.BaseURL+"/meals", wrapper.ListMeals)
 
 	router.Post(options.BaseURL+"/meals", wrapper.CreateMeal)
 
+	router.Delete(options.BaseURL+"/meals/:mealId", wrapper.DeleteMeal)
+
 	router.Get(options.BaseURL+"/meals/:mealId", wrapper.GetMeal)
+
+	router.Put(options.BaseURL+"/meals/:mealId", wrapper.UpdateMeal)
+
+	router.Get(options.BaseURL+"/day-plans", wrapper.ListDayPlans)
+
+	router.Post(options.BaseURL+"/day-plans", wrapper.CreateDayPlan)
+
+	router.Delete(options.BaseURL+"/day-plans/:dayPlanId", wrapper.DeleteDayPlan)
+
+	router.Get(options.BaseURL+"/day-plans/:dayPlanId", wrapper.GetDayPlan)
+
+	router.Put(options.BaseURL+"/day-plans/:dayPlanId", wrapper.UpdateDayPlan)
+
+	router.Get(options.BaseURL+"/calendar", wrapper.ListCalendarDays)
+
+	router.Delete(options.BaseURL+"/calendar/:date", wrapper.UnassignCalendarDay)
+
+	router.Put(options.BaseURL+"/calendar/:date", wrapper.AssignCalendarDay)
+
+	router.Get(options.BaseURL+"/targets", wrapper.GetTargets)
+
+	router.Put(options.BaseURL+"/targets", wrapper.SetTargets)
 
 }

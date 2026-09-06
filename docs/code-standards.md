@@ -31,7 +31,8 @@ and, where marked, its overrides.
 
 ### Generated code
 - `api/openapi.yaml` is the contract. Handlers implement the generated `ServerInterface`; routes are never declared by hand.
-- Generated files end in `.gen.go` and are edited only by regenerating them, through `mise run openapi:gen`.
+- Generated files end in `.gen.go` and are edited only by regenerating them: `mise run openapi:gen` for the API, `mise run sqlc:gen` for the data access layer.
+- SQL is the source of the data access layer. Queries live in `backend/sqlc/sqlite/queries`, the schema beside them, and nothing outside `repository/sqlite` imports the generated `db` package.
 - The generated `ServerInterface` is the one interface a provider package may hand out, because the spec, not the package, defines it.
 
 ### Handlers
@@ -44,6 +45,9 @@ and, where marked, its overrides.
 ### Wiring
 - `cmd/app/main.go` carries no logic beyond starting and stopping the application.
 - Wiring and route registration happen in `application.New`. There is no separate registration step.
+- `application` holds one private struct per layer — `clients`, `repositories`, `services`, `handlers` — each in the file it is named after, each with a `from` method taking the layer below.
+- `New` declares all four in one `var` block and calls `from` in order, then registers the handlers.
+- A layer depends on the one below through an interface the consumer declares, never on a concrete type.
 - Routes hang off a versioned group.
 - Liveness and readiness come from Fiber's `middleware/healthcheck`, never a hand-rolled route.
 

@@ -1,20 +1,21 @@
 package meal
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 
-	"github.com/mertan/mealprep/internal/errorx"
+	"github.com/mertan/mealprep/internal/domain"
 )
 
-func (s *Service) Get(id uuid.UUID) (Meal, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, m := range s.meals {
-		if m.ID == id {
-			return m, nil
-		}
+func (s Service) Get(ctx context.Context, id uuid.UUID) (domain.Meal, error) {
+	meal, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return domain.Meal{}, err
 	}
-
-	return Meal{}, errorx.NotFound("meal", id, nil)
+	derived, err := s.derive(ctx, []domain.Meal{meal})
+	if err != nil {
+		return domain.Meal{}, err
+	}
+	return derived[0], nil
 }

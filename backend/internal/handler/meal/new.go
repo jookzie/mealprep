@@ -1,7 +1,12 @@
 package meal
 
-import mealservice "github.com/mertan/mealprep/internal/service/meal"
+import "errors"
 
-func New(meals *mealservice.Service) Handler {
-	return Handler{meals: meals}
+var ErrNilService = errors.New("meal service is nil")
+
+func New(meals Service) (Handler, error) {
+	if meals == nil {
+		return Handler{}, ErrNilService
+	}
+	return Handler{meals: meals}, nil
 }

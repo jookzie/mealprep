@@ -1,10 +1,18 @@
 package meal
 
-import "github.com/google/uuid"
+import "errors"
 
-func New() *Service {
-	return &Service{meals: []Meal{
-		{ID: uuid.MustParse("11111111-1111-1111-1111-111111111111"), Label: "Porridge", Calories: 350},
-		{ID: uuid.MustParse("22222222-2222-2222-2222-222222222222"), Label: "Chicken and rice", Calories: 720},
-	}}
+var (
+	ErrNilRepository = errors.New("meal repository is nil")
+	ErrNilProducts   = errors.New("product repository is nil")
+)
+
+func New(repository Repository, products Products) (Service, error) {
+	if repository == nil {
+		return Service{}, ErrNilRepository
+	}
+	if products == nil {
+		return Service{}, ErrNilProducts
+	}
+	return Service{repository: repository, products: products}, nil
 }
