@@ -83,10 +83,52 @@ and, where marked, its overrides.
 - The tree stays formatted and lint-clean. `mise` holds the tasks, and the pre-commit hook runs them.
 
 ## Frontend
-- Svelte + TypeScript, strict mode.
-- UI components from shadcn-svelte; no ad-hoc component library.
-- API calls live in one client module; components never call `fetch` directly.
-- Types mirror the backend JSON contracts.
+
+### Baseline
+Svelte 5 with runes, following
+[Svelte best practices](https://svelte.dev/docs/svelte/best-practices). Whatever it
+settles is settled here. TypeScript in strict mode.
+
+### Structure
+- `src/routes/` holds one directory per screen; `src/lib/` holds what they share.
+- `lib/api` is the only path to the backend. `lib/domain` is pure logic — no Svelte, no I/O. `lib/components` splits by domain, the way `handler` and `service` do.
+- `lib/components/ui` is shadcn-svelte's output, and `lib/utils.ts` comes with it. Neither is edited by hand, and the linter skips both.
+
+### Files
+- Small and single-purpose, named after the component or concept they host.
+- Kebab-case, matching shadcn-svelte's own output.
+
+### Routes
+- A read is a `load` in `+page.ts`, never a `fetch` inside a component.
+- What selects the read — a week, a search query — lives in the URL. `url` is already a tracked dependency, so navigating re-runs the load and the result is shareable.
+- Create and edit are routes, not dialogs: every write is a full-replacement `PUT`, so an editor has to load the entity first. Dialogs are for single-field writes.
+- A failing read throws and lands in `+error.svelte`.
+
+### Components
+- No component calls the API. Forms take a draft and an `onSubmit`; tables take rows and callbacks. Routes own all I/O.
+- UI comes from shadcn-svelte; no ad-hoc component library.
+- A component that carries a binding requirement — the Open Food Facts credit, the target bars — is the single place that requirement is implemented, so it cannot be half-applied.
+
+### State
+- `$derived` over `$effect`. Effects are an escape hatch.
+- Classes or plain `$state` fields; never stores.
+- Keyed `{#each}`, and never the index as a key where identity matters.
+- A form seeds its `$state` from props once, through `untrack`, and is re-seeded by keying it on the entity's `updatedAt`. Syncing props into state with an effect would discard what the user is typing every time a mutation invalidates.
+- No legacy syntax: no `export let`, `$:`, `<slot>`, `on:click` or `use:`.
+
+### Generated code
+- `src/lib/api/gen` is generated from `api/openapi.yaml` and committed, like the `*.gen.go` files. Regenerate with `mise run openapi:gen`; never edit it.
+- Nothing outside `src/lib/api` imports from `gen/`.
+- The spec is linted before it generates anything: `mise run openapi:lint`.
+
+### Errors
+- The API answers every failure with `ErrorResponse`. `messageOf` is the one place that is unwrapped.
+- Reads throw; writes go through `runMutation`, which never throws and reports through a toast.
+- An absent singleton is not a failure: `GET /targets` answering 404 becomes `null` in `loadTargets`, in one place.
+- Every client-side join can miss, because entities are soft-deleted and then never returned. A join renders the missing case and keeps the id.
+
+### Tooling
+- `biome` formats and lints, `bun test` covers `lib/domain`, `svelte-check` is the contract check, and Playwright covers the critical paths end to end.
 
 ## General
 - Comments clarify what the code cannot state itself: intent, constraints, surprises. A comment that restates the code is discouraged. Overrides [Doc comments](https://google.github.io/styleguide/go/decisions#doc-comments), which asks for one on every exported name; package comments stay required.

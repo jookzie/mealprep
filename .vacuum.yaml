@@ -1,0 +1,22 @@
+# Ruleset for api/openapi.yaml, the contract both generators read.
+#
+# The recommended set is kept whole except for four documentation-density rules.
+# They are disabled deliberately, not to reach a green score: this spec states its
+# units, its soft-delete rule and its per-100 convention once in info.description,
+# and docs/code-standards.md discourages prose that restates what the names already
+# say. Everything structural — schema validity, operation ids, tags, parameter and
+# response shape — stays on and fails the build.
+extends: [[vacuum:oas, recommended]]
+
+rules:
+  # Every value here is nutrition data. Inventing plausible-looking kcal and gram
+  # figures in the contract would read as real reference values.
+  oas3-missing-example: off
+  # Schema names carry the suffix that says what they are (CreateMealRequest,
+  # ListProductsResponse); a description would repeat the name.
+  component-description: off
+  # Every operation has a summary. A description as well would restate it.
+  operation-description: off
+  # A consequence of sharing one phrasing across the parallel CRUD operations,
+  # which is intended.
+  description-duplication: off

@@ -3,49 +3,147 @@ go = "1.26.5"
 golangci-lint = "2.13.2"
 lefthook = "2.1.12"
 sqlc = "1.31.1"
+bun = "1.4.2"
+biome = "2.5.12"
+vacuum = "0.30.3"
+typos = "1.50.1"
 
 [env]
 # Local development settings; see .env.example for the full set.
 _.file = ".env"
 
+# Aggregates run both sides. Every task below is namespaced by the side it acts on,
+# except the ones that act on the repository as a whole.
+
 [tasks.format]
+description = "Format the whole tree"
+depends = ["backend:format", "frontend:format"]
+
+[tasks."format:check"]
+description = "Fail if the tree is not formatted"
+depends = ["backend:format:check", "frontend:format:check"]
+
+[tasks.lint]
+description = "Lint the whole tree"
+depends = ["openapi:lint", "backend:lint", "frontend:lint"]
+
+[tasks.test]
+description = "Run every test suite"
+depends = ["backend:test", "frontend:test"]
+
+[tasks.dev]
+description = "Run the backend and the frontend dev server together"
+depends = ["backend:start", "frontend:dev"]
+
+[tasks."backend:format"]
 description = "Format the Go codebase"
 dir = "{{config_root}}/backend"
 run = "golangci-lint fmt ./..."
 
-[tasks."format:check"]
+[tasks."backend:format:check"]
 description = "Fail if the Go codebase is not formatted"
 dir = "{{config_root}}/backend"
 run = "golangci-lint fmt --diff ./..."
 
-[tasks.lint]
+[tasks."backend:lint"]
 description = "Lint the Go codebase"
 dir = "{{config_root}}/backend"
 run = "golangci-lint run ./..."
 
-[tasks.test]
+[tasks."backend:test"]
 description = "Run the Go tests"
 dir = "{{config_root}}/backend"
 run = "go test ./..."
 
-[tasks.start]
+[tasks."backend:start"]
 description = "Run the backend"
 dir = "{{config_root}}/backend"
 run = "go run ./cmd/app"
 
-[tasks.hooks]
-description = "Install the lefthook git hooks"
-run = "lefthook install"
+[tasks."frontend:install"]
+description = "Install the frontend dependencies"
+dir = "{{config_root}}/frontend"
+run = "bun install"
 
-[tasks."openapi:gen"]
+[tasks."frontend:dev"]
+description = "Run the frontend dev server"
+dir = "{{config_root}}/frontend"
+run = "bun --bun run dev"
+
+[tasks."frontend:build"]
+description = "Build the frontend into static files"
+dir = "{{config_root}}/frontend"
+run = "bun --bun run build"
+
+[tasks."frontend:check"]
+description = "Typecheck the frontend against the generated client"
+dir = "{{config_root}}/frontend"
+run = "bun --bun run check"
+
+[tasks."frontend:format"]
+description = "Format the frontend"
+dir = "{{config_root}}/frontend"
+run = "biome format --write ."
+
+[tasks."frontend:format:check"]
+description = "Fail if the frontend is not formatted"
+dir = "{{config_root}}/frontend"
+run = "biome format ."
+
+[tasks."frontend:lint"]
+description = "Lint the frontend"
+dir = "{{config_root}}/frontend"
+run = "biome lint ."
+
+[tasks."frontend:test"]
+description = "Run the frontend unit tests"
+dir = "{{config_root}}/frontend"
+# Scoped to src: bun test's default patterns would otherwise pick up the Playwright
+# specs in e2e/, which need a browser and a running backend.
+run = "bun test src"
+
+[tasks."frontend:e2e"]
+description = "Run the Playwright smoke tests (backend must be running)"
+dir = "{{config_root}}/frontend"
+run = "bun --bun run test:e2e"
+
+[tasks."frontend:e2e:network"]
+description = "Run the Playwright tests that reach Open Food Facts"
+dir = "{{config_root}}/frontend"
+run = "E2E_NETWORK=1 bunx playwright test"
+
+[tasks."openapi:lint"]
+description = "Lint api/openapi.yaml, the contract both generators read"
+dir = "{{config_root}}"
+run = "vacuum lint --ruleset .vacuum.yaml --details --fail-severity warn api/openapi.yaml"
+
+[tasks."openapi:gen:backend"]
 description = "Regenerate the Go API from api/openapi.yaml"
 dir = "{{config_root}}/backend"
 run = "go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml"
+
+[tasks."openapi:gen:frontend"]
+description = "Regenerate the TypeScript client from api/openapi.yaml"
+dir = "{{config_root}}/frontend"
+run = "bunx openapi-ts"
+
+[tasks."openapi:gen"]
+description = "Regenerate both sides of the API from api/openapi.yaml"
+depends = ["openapi:gen:backend", "openapi:gen:frontend"]
 
 [tasks."sqlc:gen"]
 description = "Regenerate the SQLite data access layer from backend/sqlc/sqlite"
 dir = "{{config_root}}/backend"
 run = "sqlc generate"
+
+[tasks.typos]
+description = "Spell-check the tree"
+dir = "{{config_root}}"
+run = "typos"
+
+[tasks.hooks]
+description = "Install the lefthook git hooks"
+run = "lefthook install"
 
 [tasks.autocommit]
 description = "Review a Claude-written commit message in the editor, then commit"
@@ -65,11 +163,19 @@ Conventional Commits: type(optional scope): subject, imperative mood, at most 72
 Add a body only if the diff is large. The body should list the changes, generalized into bullet points.
 Output the message and nothing else: no code fences, no commentary."
 
+limit=200000
+full=$(mktemp)
 staged=$(mktemp)
 draft=$(mktemp)
-trap 'rm -f "$staged" "$draft"' EXIT
+trap 'rm -f "$full" "$staged" "$draft"' EXIT
 
-{ git diff --cached --stat; git diff --cached; } | head -c 200000 > "$staged"
+# Written to a file rather than piped into head: a pipe closing early kills the
+# diff with SIGPIPE, which pipefail turns into a silent exit.
+{ git diff --cached --stat; git diff --cached; } > "$full"
+head -c "$limit" "$full" > "$staged"
+if [ "$(wc -c < "$full")" -gt "$limit" ]; then
+  printf '\n\n[diff truncated at %d bytes; describe what is visible]\n' "$limit" >> "$staged"
+fi
 
 if ! message=$(claude -p --model sonnet --output-format text "$prompt" < "$staged"); then
   echo "autocommit: claude failed: $message" >&2

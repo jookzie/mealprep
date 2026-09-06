@@ -294,12 +294,16 @@ type NotFound = ErrorResponse
 
 // ListCalendarDaysParams defines parameters for ListCalendarDays.
 type ListCalendarDaysParams struct {
+	// From First date of the range, inclusive
 	From openapi_types.Date `form:"from" json:"from"`
-	To   openapi_types.Date `form:"to" json:"to"`
+
+	// To Last date of the range, inclusive
+	To openapi_types.Date `form:"to" json:"to"`
 }
 
 // SearchProductsParams defines parameters for SearchProducts.
 type SearchProductsParams struct {
+	// Q Free text matched against catalog product names
 	Q string `form:"q" json:"q"`
 }
 

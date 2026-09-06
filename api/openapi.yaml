@@ -10,10 +10,23 @@ info:
 servers:
   - url: /v1
 
+tags:
+  - name: products
+    description: The user's own products, imported from Open Food Facts or created by hand
+  - name: meals
+    description: Labeled sets of products with serving sizes
+  - name: day-plans
+    description: Labeled groups of meals
+  - name: calendar
+    description: Day plans assigned to dates
+  - name: targets
+    description: The user's daily macro figures
+
 paths:
   /products:
     get:
       operationId: listProducts
+      tags: [products]
       summary: List the user's products
       responses:
         "200":
@@ -24,6 +37,7 @@ paths:
                 $ref: "#/components/schemas/ListProductsResponse"
     post:
       operationId: createProduct
+      tags: [products]
       summary: Create a product by hand
       requestBody:
         required: true
@@ -43,10 +57,12 @@ paths:
   /products/search:
     get:
       operationId: searchProducts
+      tags: [products]
       summary: Search the Open Food Facts catalog
       parameters:
         - name: q
           in: query
+          description: Free text matched against catalog product names
           required: true
           schema:
             type: string
@@ -64,6 +80,7 @@ paths:
   /products/import:
     post:
       operationId: importProduct
+      tags: [products]
       summary: Snapshot a catalog entry into the user's products
       requestBody:
         required: true
@@ -95,6 +112,7 @@ paths:
       - $ref: "#/components/parameters/ProductId"
     get:
       operationId: getProduct
+      tags: [products]
       summary: Fetch one product
       responses:
         "200":
@@ -107,6 +125,7 @@ paths:
           $ref: "#/components/responses/NotFound"
     put:
       operationId: updateProduct
+      tags: [products]
       summary: Replace a product
       requestBody:
         required: true
@@ -127,6 +146,7 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteProduct
+      tags: [products]
       summary: Soft-delete a product
       responses:
         "204":
@@ -137,6 +157,7 @@ paths:
   /meals:
     get:
       operationId: listMeals
+      tags: [meals]
       summary: List all meals
       responses:
         "200":
@@ -147,6 +168,7 @@ paths:
                 $ref: "#/components/schemas/ListMealsResponse"
     post:
       operationId: createMeal
+      tags: [meals]
       summary: Create a meal
       requestBody:
         required: true
@@ -168,6 +190,7 @@ paths:
       - $ref: "#/components/parameters/MealId"
     get:
       operationId: getMeal
+      tags: [meals]
       summary: Fetch one meal
       responses:
         "200":
@@ -180,6 +203,7 @@ paths:
           $ref: "#/components/responses/NotFound"
     put:
       operationId: updateMeal
+      tags: [meals]
       summary: Replace a meal's label and servings
       requestBody:
         required: true
@@ -200,6 +224,7 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteMeal
+      tags: [meals]
       summary: Soft-delete a meal
       responses:
         "204":
@@ -210,6 +235,7 @@ paths:
   /day-plans:
     get:
       operationId: listDayPlans
+      tags: [day-plans]
       summary: List all day plans
       responses:
         "200":
@@ -220,6 +246,7 @@ paths:
                 $ref: "#/components/schemas/ListDayPlansResponse"
     post:
       operationId: createDayPlan
+      tags: [day-plans]
       summary: Create a day plan
       requestBody:
         required: true
@@ -241,6 +268,7 @@ paths:
       - $ref: "#/components/parameters/DayPlanId"
     get:
       operationId: getDayPlan
+      tags: [day-plans]
       summary: Fetch one day plan
       responses:
         "200":
@@ -253,6 +281,7 @@ paths:
           $ref: "#/components/responses/NotFound"
     put:
       operationId: updateDayPlan
+      tags: [day-plans]
       summary: Replace a day plan's label and meals
       requestBody:
         required: true
@@ -273,6 +302,7 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteDayPlan
+      tags: [day-plans]
       summary: Soft-delete a day plan
       responses:
         "204":
@@ -283,16 +313,19 @@ paths:
   /calendar:
     get:
       operationId: listCalendarDays
+      tags: [calendar]
       summary: List the assigned days in a date range
       parameters:
         - name: from
           in: query
+          description: First date of the range, inclusive
           required: true
           schema:
             type: string
             format: date
         - name: to
           in: query
+          description: Last date of the range, inclusive
           required: true
           schema:
             type: string
@@ -310,12 +343,14 @@ paths:
     parameters:
       - name: date
         in: path
+        description: The calendar day
         required: true
         schema:
           type: string
           format: date
     put:
       operationId: assignCalendarDay
+      tags: [calendar]
       summary: Put a day plan on a date, replacing any existing one
       requestBody:
         required: true
@@ -334,6 +369,7 @@ paths:
           $ref: "#/components/responses/BadRequest"
     delete:
       operationId: unassignCalendarDay
+      tags: [calendar]
       summary: Clear the day plan from a date
       responses:
         "204":
@@ -344,6 +380,7 @@ paths:
   /targets:
     get:
       operationId: getTargets
+      tags: [targets]
       summary: Fetch the daily targets
       responses:
         "200":
@@ -356,6 +393,7 @@ paths:
           $ref: "#/components/responses/NotFound"
     put:
       operationId: setTargets
+      tags: [targets]
       summary: Set the daily targets
       requestBody:
         required: true
@@ -378,6 +416,7 @@ components:
     ProductId:
       name: productId
       in: path
+      description: The product
       required: true
       schema:
         type: string
@@ -385,6 +424,7 @@ components:
     MealId:
       name: mealId
       in: path
+      description: The meal
       required: true
       schema:
         type: string
@@ -392,6 +432,7 @@ components:
     DayPlanId:
       name: dayPlanId
       in: path
+      description: The day plan
       required: true
       schema:
         type: string

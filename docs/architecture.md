@@ -2,16 +2,27 @@
 
 ## Overview
 ```
-browser (Svelte+TS+shadcn)  ──HTTP/JSON──▶  Go backend (Fiber)  ──▶  SQLite
-                                                   │
-                                                   └──▶  Open Food Facts API
+static SPA (SvelteKit+TS+shadcn)  ──HTTP/JSON──▶  Go backend (Fiber)  ──▶  SQLite
+                                                          │
+                                                          └──▶  Open Food Facts API
 ```
+The frontend builds to static files and runs entirely in the browser; the backend is a
+separate process that owns all state. Both sides are generated from the same contract.
 
 ## API contract
-`api/openapi.yaml` is the source of truth for the HTTP API. Go server code is generated
-from it with [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) (`fiber-v3-server`
-plus models) into `internal/api`, and the frontend client is generated from the same file.
-Regenerate with `mise run openapi:gen`; never edit `*.gen.go`.
+`api/openapi.yaml` is the source of truth for the HTTP API, and both sides are generated
+from it:
+
+| Side | Generator | Output |
+| --- | --- | --- |
+| Go server | [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) (`fiber-v3-server` plus models) | `backend/internal/api/api.gen.go` |
+| TypeScript client | [@hey-api/openapi-ts](https://heyapi.dev) (one function per `operationId`) | `frontend/src/lib/api/gen/` |
+
+`mise run openapi:gen` regenerates both. Neither output is ever edited by hand: a route
+that drifts from the spec stops compiling on the Go side and stops typechecking on the
+frontend. The spec itself is linted with [vacuum](https://quobix.com/vacuum/) —
+`mise run openapi:lint`, ruleset in `.vacuum.yaml` — so a broken contract is caught before
+it produces two broken sides.
 
 ## Backend layout
 ```
@@ -49,6 +60,42 @@ consumer declares, so a service names the repository methods it uses and nothing
 `application` imports all of them and wires them together. `domain` and `errorx` sit
 under everything and import nothing of their own.
 
+## Frontend layout
+```
+frontend/
+  openapi-ts.config.ts   what generates src/lib/api/gen from api/openapi.yaml
+  biome.json             one formatter and linter for the whole frontend
+  playwright.config.ts   the smoke tests, run against a live backend
+  e2e/                   those tests
+  src/
+    app.css              Tailwind entry and the shadcn-svelte theme tokens
+    routes/              one directory per screen: +page.ts reads, +page.svelte renders
+    lib/
+      api/               the only way the app reaches the backend
+        gen/             generated client (do not edit)
+      domain/            pure logic: macro arithmetic, week dates, the calendar join
+      components/
+        ui/              shadcn-svelte primitives (do not edit)
+        app/             shell and cross-domain pieces
+        <domain>/        macros, product, meal, day-plan, calendar
+```
+Routes own all I/O. Components take data and callbacks, never call the API themselves.
+
+## Frontend data flow
+```
++page.ts load ──▶ $lib/api (generated SDK) ──▶ backend
+      ▲                                           │
+      └────── invalidateAll() ◀── runMutation ────┘
+```
+Reads are `load` functions, so navigation and the URL drive them — the calendar's week
+and the catalog search's query are both query parameters rather than component state.
+Writes go through `runMutation`, which toasts, re-runs every load, and redirects; it is
+the one place the failure path is written. There is no second caching layer.
+
+Editors load the entity first, because every write is a full-replacement `PUT`. A form is
+seeded from its props exactly once and re-seeded by keying it on the entity's
+`updatedAt`, so an invalidation mid-edit cannot overwrite what is being typed.
+
 ## Key decisions
 - **Consumer-defined interfaces**: a store package returns its concrete type, and each caller declares the narrow interface it needs. Swapping the database means writing another store, not editing a shared contract.
 - **Sub-packages per category**: every layer grows sideways, and no package accumulates unrelated files.
@@ -58,6 +105,11 @@ under everything and import nothing of their own.
 - **Spec-first API**: handlers implement a generated interface, so a route that drifts from `api/openapi.yaml` stops compiling.
 - **SQL-first persistence**: queries are written by hand and `sqlc` generates the Go for them, so the database access is as reviewable as the rest.
 - **Snapshot, not reference**: an imported product is copied at pick time and never re-read from the catalog ([todo](todo.md)).
+- **Static SPA**: the frontend builds to static files (`adapter-static`, `ssr = false`). Nothing runs on a server at request time, so the backend stays a separate instance and how the bundle is served is a deployment question, not a code one.
+- **Generated client, one module**: `$lib/api` is the only path to the backend. Components never call `fetch`, and nothing outside that directory imports `gen/`.
+- **Totals joined in the browser**: the API derives macros for meals and day plans, but no endpoint totals a date range. `domain/calendar.ts` is the single place a `dayPlanId` becomes macros, so the week grid and its summary cannot disagree.
+- **Dangling references are a state, not an error**: entities are soft-deleted and then never returned, so every client-side join can miss. A serving whose product is gone, and a date whose plan is gone, each render as removed while keeping the id, so the user can still fix them.
+- **One linter per language**: `golangci-lint` for Go, `biome` for the frontend, `vacuum` for the spec. `mise` holds the tasks and the pre-commit hook runs them.
 
 ## Domain model
 - `Product` — id, name, unit, the four macros and every further nutrient per 100 units. Snapshotted from Open Food Facts (with `sourceCode`) or created by the user.

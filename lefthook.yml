@@ -1,12 +1,30 @@
 pre-commit:
   parallel: true
   jobs:
-    - name: fmt
+    - name: backend-fmt
       glob: "backend/**/*.go"
-      run: mise run fmt:check
-    - name: lint
+      run: mise run backend:format:check
+    - name: backend-lint
       glob: "backend/**/*.{go,mod,sum}"
-      run: mise run lint
-    - name: test
+      run: mise run backend:lint
+    - name: backend-test
       glob: "backend/**/*.{go,mod,sum}"
-      run: mise run test
+      run: mise run backend:test
+    - name: frontend-fmt
+      glob: "frontend/**/*.{svelte,ts,js,css,json}"
+      run: mise run frontend:format:check
+    - name: frontend-lint
+      glob: "frontend/**/*.{svelte,ts,js}"
+      run: mise run frontend:lint
+    - name: frontend-check
+      glob: "frontend/**/*.{svelte,ts}"
+      run: mise run frontend:check
+    - name: frontend-test
+      glob: "frontend/**/*.ts"
+      run: mise run frontend:test
+    # The spec generates both sides, so a broken one breaks Go and TypeScript together.
+    - name: openapi
+      glob: "api/openapi.yaml"
+      run: mise run openapi:lint
+    - name: typos
+      run: mise run typos

@@ -1,0 +1,11 @@
+# Spell check for prose and identifiers. Lockfiles and generated output are excluded:
+# they carry content hashes and vendored strings that are not words to begin with.
+[files]
+extend-exclude = [
+  "go.mod",
+  "go.sum",
+  "bun.lock",
+  "*.gen.go",
+  "frontend/src/lib/api/gen/",
+  "frontend/src/lib/components/ui/",
+]

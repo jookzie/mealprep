@@ -64,7 +64,7 @@ set their own targets.
 ### 2.4 Operating environment
 - Backend: Go 1.26 with Fiber v3, running in a Linux container (`docker-compose.yml`).
 - Storage: a SQLite database file on a mounted volume.
-- Frontend: Svelte + TypeScript + shadcn-svelte. Any browser that runs the compiled Svelte bundle is supported; no older baseline is targeted.
+- Frontend: SvelteKit + TypeScript + shadcn-svelte, built with Bun into a static single-page app. Any browser that runs the compiled bundle is supported; no older baseline is targeted.
 - Deployment: localhost only. The application is not reachable from another machine.
 
 ### 2.5 Design and implementation constraints
@@ -85,9 +85,39 @@ set their own targets.
 ## 3. External interface requirements
 
 ### 3.1 User interfaces
-A browser UI built from shadcn-svelte components. Nutrients are shown as the four macros,
-with the full nutrient set behind an expansion (`PR-9`). Screen inventory, layouts and
-navigation: *To be determined* (TBD-5).
+A browser UI built from shadcn-svelte components, served as a static single-page app.
+Nutrients are shown as the four macros, with the full nutrient set behind an expansion
+(`PR-9`).
+
+Navigation is a persistent sidebar listing Calendar, Day plans, Meals, Products and
+Targets, in that order. `/` redirects to the calendar. There is no separate dashboard:
+the calendar already carries the planned-against-target figures `TG-2` and `TG-3` ask for,
+and a second screen repeating them would be one more thing to keep true.
+
+| Screen | Path | Serves |
+| --- | --- | --- |
+| Product list | `/products` | `PR-10` — the user's products, with delete |
+| New product | `/products/new` | `PR-3`, `PR-7` — the four macros required, others optional |
+| Catalog search | `/products/search?q=` | `PR-1`, `PR-2`, `PR-8` — search and snapshot an entry |
+| Product detail | `/products/{id}` | `PR-9`, §6 — macros, nutrient expansion, source credit and link |
+| Edit product | `/products/{id}/edit` | `PR-10` |
+| Meal list | `/meals` | `ML-5` |
+| New meal | `/meals/new` | `ML-1`, `ML-2` — products with serving sizes |
+| Meal detail | `/meals/{id}` | `ML-3`, `ML-4` — servings and the derived nutrients |
+| Edit meal | `/meals/{id}/edit` | `ML-5` |
+| Day plan list | `/day-plans` | `DP-5` |
+| New day plan | `/day-plans/new` | `DP-1`, `DP-2` |
+| Day plan detail | `/day-plans/{id}` | `DP-4`, `TG-2`, `TG-3` — the sum, against the targets |
+| Edit day plan | `/day-plans/{id}/edit` | `DP-5` |
+| Calendar | `/calendar?week=` | `CL-1`, `CL-2`, `CL-3`, `TG-2`, `TG-3` — a week, its assignments and totals |
+| Targets | `/targets` | `TG-1` |
+
+Creating and editing are screens rather than dialogs, because every write replaces the
+whole entity and so has to start from a fresh read. Dialogs carry the single-field
+actions: assigning a plan to a date, and confirming a delete.
+
+The calendar compares a week's total against the daily target multiplied by the days
+actually planned, so an unplanned day reads as unplanned rather than as a shortfall.
 
 ### 3.2 Hardware interfaces
 None. The application runs on commodity hardware and talks to no devices.
@@ -218,5 +248,4 @@ IEEE 830 §4.3.3.1 asks that every TBD record why it is open and what closes it.
 | ID | Open item | Why it is open | What closes it |
 | --- | --- | --- | --- |
 | TBD-3 | User documentation | Premature before the UI exists | The UI stabilises |
-| TBD-5 | Screen inventory and navigation | Frontend design has not started | UI design |
 | TBD-12 | Database schema | Persistence is not implemented | `repository/sqlite` is designed |

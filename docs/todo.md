@@ -17,3 +17,24 @@ Each entry records what happens today, what is deferred, and what would trigger 
 - **Deferred**: importing an incomplete entry anyway — with a warning, or by letting the user
   fill the gaps by hand.
 - **Trigger**: rejection turning out to block products the user actually wants.
+
+## Frontend test runner
+- **Today**: `bun test` covers the pure modules under `frontend/src/lib/domain` — macro
+  arithmetic, week dates, the calendar join — with no config and no extra dependency.
+  Playwright covers the critical paths end to end.
+- **Deferred**: Vitest, which resolves `$lib` and `$app` and can render components.
+- **Trigger**: the first unit test that needs to import `$app/*` or mount a component.
+
+## Serving the built frontend
+- **Today**: `mise run frontend:build` emits static files, and development goes through a
+  Vite proxy to the backend on `PORT`. Nothing serves the bundle in `docker-compose.yml`.
+- **Deferred**: how the artifact ships — the backend embedding it with `go:embed`, or a
+  static file server beside the backend that also proxies `/v1`.
+- **Trigger**: wanting to run the application outside a development machine.
+
+## Biome's Svelte support
+- **Today**: `biome` formats and lints `.svelte` files with
+  `html.experimentalFullSupportEnabled`, which is what makes template handling work.
+- **Deferred**: dropping the flag once the support leaves experimental, or adding
+  `prettier-plugin-svelte` for `.svelte` alone if the markup formatter proves unreliable.
+- **Trigger**: a Biome release that stabilises it, or formatting churn that costs review time.

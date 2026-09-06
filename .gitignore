@@ -30,35 +30,7 @@ go.work.sum
 .idea/
 .vscode/
 
- # SQLite database
+# SQLite database
 *.db
- *.db*
-
- # Svelte https://github.com/sveltejs/svelte/blob/main/.gitignore
- # Dependency directories
-node_modules/
-
- # IDE related
-.idea
-
- # Test coverage
-coverage
-*.lcov
-
- # Optional eslint cache
-.eslintcache
-
- # build output
-.vercel
-
- # OS-specific
-.DS_Store
-
-tmp
-packages/svelte/scripts/_baseline/
-
-benchmarking/.profiles
-benchmarking/compare/.results
-benchmarking/compare/.profiles
-benchmarking/compare/results.html
-frontend/node_modules/
+*.db-shm
+*.db-wal
