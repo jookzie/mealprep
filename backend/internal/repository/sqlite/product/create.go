@@ -25,6 +25,7 @@ func (r Repository) Create(ctx context.Context, product domain.Product) (domain.
 		ProteinG:       product.Macros.ProteinG,
 		CarbohydratesG: product.Macros.CarbohydratesG,
 		Nutrients:      nutrients,
+		Brand:          sql.NullString{String: product.Brand, Valid: product.Brand != ""},
 		SourceCode:     sql.NullString{String: product.SourceCode, Valid: product.SourceCode != ""},
 		CreatedAt:      now,
 		UpdatedAt:      now,

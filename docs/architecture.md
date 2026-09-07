@@ -76,7 +76,8 @@ frontend/
       domain/            pure logic: macro arithmetic, week dates, the calendar join
       components/
         ui/              shadcn-svelte primitives (do not edit)
-        app/             shell and cross-domain pieces
+        app/             shell and cross-domain pieces: sidebar, command palette,
+                         number field, move buttons, sortable header, skeletons
         <domain>/        macros, product, meal, day-plan, calendar
 ```
 Routes own all I/O. Components take data and callbacks, never call the API themselves.
@@ -107,14 +108,18 @@ seeded from its props exactly once and re-seeded by keying it on the entity's
 - **Snapshot, not reference**: an imported product is copied at pick time and never re-read from the catalog ([todo](todo.md)).
 - **Static SPA**: the frontend builds to static files (`adapter-static`, `ssr = false`). Nothing runs on a server at request time, so the backend stays a separate instance and how the bundle is served is a deployment question, not a code one.
 - **Generated client, one module**: `$lib/api` is the only path to the backend. Components never call `fetch`, and nothing outside that directory imports `gen/`.
-- **Totals joined in the browser**: the API derives macros for meals and day plans, but no endpoint totals a date range. `domain/calendar.ts` is the single place a `dayPlanId` becomes macros, so the week grid and its summary cannot disagree.
+- **Macro colour is identity, not status**: `app.css` fixes one hue per macro and the app never introduces a second colour to mean "over target" — over-target is the same hue under a hatch. That keeps `--destructive` meaning "broken" and nothing else, and is why the palette contains no red. Energy is the sum of the other three, so it stays neutral rather than becoming a fourth series.
+- **A meter, not a progress bar**: planned-against-target is a scalar within a known range that can legitimately exceed its maximum, which is a `meter`; a `progressbar` is monotonic task completion. `macros/macro-meter.svelte` wraps bits-ui's `Meter` and sets `aria-valuetext` explicitly, because a percentage reading of 231 against a max of 200 announces as nonsense.
+- **Ordering is persisted, and now editable**: `meal_servings` and `day_plan_meals` have always carried `position`, and the API's array order is that column. Reordering is exposed with move-up/move-down buttons rather than drag, because WCAG 2.2 SC 2.5.7 makes a non-drag path the required baseline.
+- **Bulk assignment is a client-side loop**: there is no endpoint that writes a range, so applying a plan across weekdays issues one `PUT /calendar/{date}` per day, in sequence — the backend holds a single SQLite writer, so concurrency would only contend for its lock.
+- **Totals joined in the browser**: the API derives macros for meals and day plans, but no endpoint totals a date range. `domain/calendar.ts` is the single place a `dayPlanId` becomes macros, so the week grid and its summary cannot disagree. It is also where an unplanned day is kept out of the week's denominator.
 - **Dangling references are a state, not an error**: entities are soft-deleted and then never returned, so every client-side join can miss. A serving whose product is gone, and a date whose plan is gone, each render as removed while keeping the id, so the user can still fix them.
 - **One linter per language**: `golangci-lint` for Go, `biome` for the frontend, `vacuum` for the spec. `mise` holds the tasks and the pre-commit hook runs them.
 
 ## Domain model
-- `Product` — id, name, unit, the four macros and every further nutrient per 100 units. Snapshotted from Open Food Facts (with `sourceCode`) or created by the user.
+- `Product` — id, name, optional brand, unit, the four macros and every further nutrient per 100 units. Snapshotted from Open Food Facts (with `sourceCode`) or created by the user. Brand is identity, not presentation: two imports often share a name and differ only there.
 - `Meal` — label + list of (product, serving amount in the product's unit).
-- `DayPlan` — label + list of meals.
+- `DayPlan` — label + ordered list of meals, each carrying its own servings so a plan breaks down to products without a second read of every meal.
 - `CalendarDay` — date → day plan, at most one per date.
 - `Targets` — energy (kcal), fat, protein, carbs. Exactly one row.
 

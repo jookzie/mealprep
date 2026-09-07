@@ -27,6 +27,10 @@ export type Product = {
     macros: Macros;
     nutrients: Nutrients;
     /**
+     * Who makes it; snapshotted at import and part of the product's identity, not its presentation
+     */
+    brand?: string;
+    /**
      * Open Food Facts code the snapshot came from; absent when created by hand
      */
     sourceCode?: string;
@@ -39,6 +43,7 @@ export type ProductDraft = {
     unit: Unit;
     macros: Macros;
     nutrients?: Nutrients;
+    brand?: string;
 };
 
 export type CatalogEntry = {
@@ -47,6 +52,14 @@ export type CatalogEntry = {
     unit: Unit;
     macros: Macros;
     nutrients: Nutrients;
+    /**
+     * First of the catalog's brand tags; several entries often share a name and differ only by this
+     */
+    brand?: string;
+    /**
+     * Catalog-hosted thumbnail, linked rather than copied because the images carry a different licence from the data
+     */
+    imageUrl?: string;
     /**
      * False when one of the four macros is missing, which makes the entry unimportable
      */
@@ -130,6 +143,10 @@ export type UpdateMealResponse = {
 export type DayPlanMeal = {
     id: string;
     label: string;
+    /**
+     * Carried so a day plan can be broken down to products without a second read of every meal
+     */
+    servings: Array<Serving>;
     macros: Macros;
 };
 

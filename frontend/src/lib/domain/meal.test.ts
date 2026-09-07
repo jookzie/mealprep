@@ -71,11 +71,13 @@ test('a day plan reads back as meals but writes as ids', () => {
 			{
 				id: 'm1',
 				label: 'Porridge',
+				servings: [{ productId: 'p1', amount: 80 }],
 				macros: { energyKcal: 1, fatG: 1, proteinG: 1, carbohydratesG: 1 },
 			},
 			{
 				id: 'm2',
 				label: 'Chili',
+				servings: [],
 				macros: { energyKcal: 2, fatG: 2, proteinG: 2, carbohydratesG: 2 },
 			},
 		],

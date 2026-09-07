@@ -32,6 +32,10 @@ func (h Handler) ImportProduct(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(api.ErrorResponse{Message: "internal error"})
 	}
 
+	var brand *string
+	if p.Brand != "" {
+		brand = &p.Brand
+	}
 	sourceCode := p.SourceCode
 
 	return c.Status(fiber.StatusCreated).JSON(api.ImportProductResponse{Product: api.Product{
@@ -45,6 +49,7 @@ func (h Handler) ImportProduct(c fiber.Ctx) error {
 			CarbohydratesG: p.Macros.CarbohydratesG,
 		},
 		Nutrients:  p.Nutrients,
+		Brand:      brand,
 		SourceCode: &sourceCode,
 		CreatedAt:  p.CreatedAt,
 		UpdatedAt:  p.UpdatedAt,

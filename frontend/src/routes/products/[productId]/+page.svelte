@@ -12,7 +12,12 @@
 	let { data } = $props();
 </script>
 
-<PageHeader title={data.product.name} description="Per 100 {data.product.unit}.">
+<PageHeader
+	title={data.product.name}
+	description={data.product.brand
+		? `${data.product.brand} · per 100 ${data.product.unit}.`
+		: `Per 100 ${data.product.unit}.`}
+>
 	{#snippet actions()}
 		<Button href="/products/{data.product.id}/edit" variant="outline">
 			<PencilIcon class="size-4" />

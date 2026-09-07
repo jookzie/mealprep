@@ -1,6 +1,6 @@
 -- name: CreateProduct :one
-INSERT INTO products (id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, source_code, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO products (id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, brand, source_code, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetProduct :one
@@ -14,7 +14,7 @@ SELECT * FROM products WHERE id IN (sqlc.slice('ids')) AND deleted_at IS NULL;
 
 -- name: UpdateProduct :one
 UPDATE products
-SET name = ?, unit = ?, energy_kcal = ?, fat_g = ?, protein_g = ?, carbohydrates_g = ?, nutrients = ?, updated_at = ?
+SET name = ?, unit = ?, energy_kcal = ?, fat_g = ?, protein_g = ?, carbohydrates_g = ?, nutrients = ?, brand = ?, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL
 RETURNING *;
 

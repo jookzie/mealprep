@@ -1,20 +1,26 @@
 <script lang="ts">
-	import CheckIcon from '@lucide/svelte/icons/check';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import type { Meal } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import * as Command from '$lib/components/ui/command';
 	import * as Popover from '$lib/components/ui/popover';
 	import { formatKcal } from '$lib/domain/format';
+	import { byRecency } from '$lib/domain/sort';
 
 	let {
 		meals,
-		selected,
-		onToggle
-	}: { meals: readonly Meal[]; selected: readonly string[]; onToggle: (mealId: string) => void } =
-		$props();
+		open = $bindable(false),
+		onChoose
+	}: { meals: readonly Meal[]; open?: boolean; onChoose: (mealId: string) => void } = $props();
 
-	let open = $state(false);
+	// A day plan may legitimately hold the same meal twice, so there is nothing to tick
+	// off here: choosing adds, every time.
+	const ordered = $derived(byRecency(meals));
+
+	function choose(mealId: string) {
+		onChoose(mealId);
+		open = false;
+	}
 </script>
 
 <Popover.Root bind:open>
@@ -32,11 +38,8 @@
 			<Command.List>
 				<Command.Empty>No meal found.</Command.Empty>
 				<Command.Group>
-					{#each meals as meal (meal.id)}
-						<Command.Item value={meal.label} onSelect={() => onToggle(meal.id)}>
-							<CheckIcon
-								class="size-4 {selected.includes(meal.id) ? 'opacity-100' : 'opacity-0'}"
-							/>
+					{#each ordered as meal (meal.id)}
+						<Command.Item value={meal.label} onSelect={() => choose(meal.id)}>
 							<span class="flex-1 truncate">{meal.label}</span>
 							<span class="text-muted-foreground text-xs tabular-nums">
 								{formatKcal(meal.macros.energyKcal)}

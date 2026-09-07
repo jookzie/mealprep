@@ -10,14 +10,29 @@
 	import { page } from '$app/state';
 	import * as Sidebar from '$lib/components/ui/sidebar';
 
-	// Ordered by what builds on what: products come first, meals build on them,
-	// day plans on meals, and the calendar on day plans.
-	const sections = [
-		{ href: '/calendar', label: 'Calendar', icon: CalendarIcon },
-		{ href: '/day-plans', label: 'Day plans', icon: LayersIcon },
-		{ href: '/meals', label: 'Meals', icon: UtensilsIcon },
-		{ href: '/products', label: 'Products', icon: WheatIcon },
-		{ href: '/targets', label: 'Targets', icon: TargetIcon }
+	/*
+	 * Plan is scheduling — what happens when. Library is the building blocks — what
+	 * exists. The split mirrors a distinction already in the domain rather than an
+	 * invented one, and it keeps the dependency ordering inside each group.
+	 *
+	 * Targets sits in the footer instead: it is one row of configuration, edited rarely,
+	 * and no group label honestly covers both Products and Targets.
+	 */
+	const groups = [
+		{
+			label: 'Plan',
+			items: [
+				{ href: '/calendar', label: 'Calendar', icon: CalendarIcon, shortcut: '⌘1' },
+				{ href: '/day-plans', label: 'Day plans', icon: LayersIcon, shortcut: '⌘2' }
+			]
+		},
+		{
+			label: 'Library',
+			items: [
+				{ href: '/meals', label: 'Meals', icon: UtensilsIcon, shortcut: '⌘3' },
+				{ href: '/products', label: 'Products', icon: WheatIcon, shortcut: '⌘4' }
+			]
+		}
 	];
 
 	function isActive(href: string): boolean {
@@ -49,28 +64,44 @@
 	</Sidebar.Header>
 
 	<Sidebar.Content>
-		<Sidebar.Group>
-			<Sidebar.GroupContent>
-				<Sidebar.Menu>
-					{#each sections as section (section.href)}
-						<Sidebar.MenuItem>
-							<Sidebar.MenuButton isActive={isActive(section.href)} tooltipContent={section.label}>
-								{#snippet child({ props })}
-									<a href={section.href} {...props}>
-										<section.icon />
-										<span>{section.label}</span>
-									</a>
-								{/snippet}
-							</Sidebar.MenuButton>
-						</Sidebar.MenuItem>
-					{/each}
-				</Sidebar.Menu>
-			</Sidebar.GroupContent>
-		</Sidebar.Group>
+		{#each groups as group (group.label)}
+			<Sidebar.Group>
+				<Sidebar.GroupLabel>{group.label}</Sidebar.GroupLabel>
+				<Sidebar.GroupContent>
+					<Sidebar.Menu>
+						{#each group.items as item (item.href)}
+							<Sidebar.MenuItem>
+								<Sidebar.MenuButton isActive={isActive(item.href)} tooltipContent={item.label}>
+									{#snippet child({ props })}
+										<a href={item.href} {...props}>
+											<item.icon />
+											<span>{item.label}</span>
+										</a>
+									{/snippet}
+								</Sidebar.MenuButton>
+								<Sidebar.MenuBadge class="text-muted-foreground text-xs">
+									{item.shortcut}
+								</Sidebar.MenuBadge>
+							</Sidebar.MenuItem>
+						{/each}
+					</Sidebar.Menu>
+				</Sidebar.GroupContent>
+			</Sidebar.Group>
+		{/each}
 	</Sidebar.Content>
 
 	<Sidebar.Footer>
 		<Sidebar.Menu>
+			<Sidebar.MenuItem>
+				<Sidebar.MenuButton isActive={isActive('/targets')} tooltipContent="Targets">
+					{#snippet child({ props })}
+						<a href="/targets" {...props}>
+							<TargetIcon />
+							<span>Targets</span>
+						</a>
+					{/snippet}
+				</Sidebar.MenuButton>
+			</Sidebar.MenuItem>
 			<Sidebar.MenuItem>
 				<Sidebar.MenuButton onclick={toggleMode} tooltipContent="Toggle theme">
 					<SunIcon class="dark:hidden" />

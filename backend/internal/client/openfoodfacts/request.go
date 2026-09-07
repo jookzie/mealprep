@@ -21,8 +21,12 @@ const userAgent = "mealprep/0.1 (https://github.com/mertan/mealprep)"
 // rawProduct mirrors the fields requested from the API. Nutriment values arrive as
 // numbers or strings, so they are decoded loosely and filtered in nutriments().
 type rawProduct struct {
-	Code             string         `json:"code"`
-	ProductName      string         `json:"product_name"`
+	Code        string `json:"code"`
+	ProductName string `json:"product_name"`
+	// BrandTags is preferred to the "brands" string, which is comma-separated
+	// with inconsistent casing.
+	BrandTags        []string       `json:"brands_tags"`
+	ImageURL         string         `json:"image_front_small_url"`
 	NutritionDataPer string         `json:"nutrition_data_per"`
 	Nutriments       map[string]any `json:"nutriments"`
 }
@@ -39,9 +43,16 @@ func (r rawProduct) product() Product {
 		}
 	}
 
+	var brand string
+	if len(r.BrandTags) > 0 {
+		brand = r.BrandTags[0]
+	}
+
 	return Product{
 		Code:             r.Code,
 		Name:             r.ProductName,
+		Brand:            brand,
+		ImageURL:         r.ImageURL,
 		NutritionDataPer: r.NutritionDataPer,
 		Nutriments:       nutriments,
 	}

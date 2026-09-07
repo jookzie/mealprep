@@ -5,7 +5,7 @@ import (
 	"net/url"
 )
 
-const fields = "code,product_name,nutriments,nutrition_data_per"
+const fields = "code,product_name,brands_tags,image_front_small_url,nutriments,nutrition_data_per"
 
 // Search uses the search host; the site's own search endpoint is rate-limited.
 func (c Client) Search(ctx context.Context, query string) ([]Product, error) {

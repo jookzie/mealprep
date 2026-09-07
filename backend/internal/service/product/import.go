@@ -29,6 +29,7 @@ func (s Service) Import(ctx context.Context, code string) (domain.Product, error
 		Unit:       entry.Unit,
 		Macros:     entry.Macros,
 		Nutrients:  entry.Nutrients,
+		Brand:      entry.Brand,
 		SourceCode: entry.Code,
 	}
 	if err = validate(product); err != nil {

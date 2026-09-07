@@ -51,12 +51,17 @@ type CalendarDay struct {
 
 // CatalogEntry defines model for CatalogEntry.
 type CatalogEntry struct {
-	Code string `json:"code"`
+	// Brand First of the catalog's brand tags; several entries often share a name and differ only by this
+	Brand *string `json:"brand,omitempty"`
+	Code  string  `json:"code"`
 
 	// Complete False when one of the four macros is missing, which makes the entry unimportable
-	Complete bool   `json:"complete"`
-	Macros   Macros `json:"macros"`
-	Name     string `json:"name"`
+	Complete bool `json:"complete"`
+
+	// ImageUrl Catalog-hosted thumbnail, linked rather than copied because the images carry a different licence from the data
+	ImageUrl *string `json:"imageUrl,omitempty"`
+	Macros   Macros  `json:"macros"`
+	Name     string  `json:"name"`
 
 	// Nutrients Every further nutrient per 100 units, keyed by name
 	Nutrients Nutrients `json:"nutrients"`
@@ -108,6 +113,9 @@ type DayPlanMeal struct {
 	Id     openapi_types.UUID `json:"id"`
 	Label  string             `json:"label"`
 	Macros Macros             `json:"macros"`
+
+	// Servings Carried so a day plan can be broken down to products without a second read of every meal
+	Servings []Serving `json:"servings"`
 }
 
 // ErrorResponse defines model for ErrorResponse.
@@ -194,6 +202,8 @@ type Nutrients map[string]float64
 
 // Product defines model for Product.
 type Product struct {
+	// Brand Who makes it; snapshotted at import and part of the product's identity, not its presentation
+	Brand     *string            `json:"brand,omitempty"`
 	CreatedAt time.Time          `json:"createdAt"`
 	Id        openapi_types.UUID `json:"id"`
 	Macros    Macros             `json:"macros"`
@@ -210,8 +220,9 @@ type Product struct {
 
 // ProductDraft defines model for ProductDraft.
 type ProductDraft struct {
-	Macros Macros `json:"macros"`
-	Name   string `json:"name"`
+	Brand  *string `json:"brand,omitempty"`
+	Macros Macros  `json:"macros"`
+	Name   string  `json:"name"`
 
 	// Nutrients Every further nutrient per 100 units, keyed by name
 	Nutrients *Nutrients `json:"nutrients,omitempty"`

@@ -12,9 +12,9 @@ import (
 )
 
 const createProduct = `-- name: CreateProduct :one
-INSERT INTO products (id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, source_code, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, source_code, created_at, updated_at, deleted_at
+INSERT INTO products (id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, brand, source_code, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, brand, source_code, created_at, updated_at, deleted_at
 `
 
 type CreateProductParams struct {
@@ -26,6 +26,7 @@ type CreateProductParams struct {
 	ProteinG       float64
 	CarbohydratesG float64
 	Nutrients      string
+	Brand          sql.NullString
 	SourceCode     sql.NullString
 	CreatedAt      string
 	UpdatedAt      string
@@ -41,6 +42,7 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (P
 		arg.ProteinG,
 		arg.CarbohydratesG,
 		arg.Nutrients,
+		arg.Brand,
 		arg.SourceCode,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -55,6 +57,7 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (P
 		&i.ProteinG,
 		&i.CarbohydratesG,
 		&i.Nutrients,
+		&i.Brand,
 		&i.SourceCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -64,7 +67,7 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (P
 }
 
 const getProduct = `-- name: GetProduct :one
-SELECT id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, source_code, created_at, updated_at, deleted_at FROM products WHERE id = ? AND deleted_at IS NULL
+SELECT id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, brand, source_code, created_at, updated_at, deleted_at FROM products WHERE id = ? AND deleted_at IS NULL
 `
 
 func (q *Queries) GetProduct(ctx context.Context, id string) (Product, error) {
@@ -79,6 +82,7 @@ func (q *Queries) GetProduct(ctx context.Context, id string) (Product, error) {
 		&i.ProteinG,
 		&i.CarbohydratesG,
 		&i.Nutrients,
+		&i.Brand,
 		&i.SourceCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -88,7 +92,7 @@ func (q *Queries) GetProduct(ctx context.Context, id string) (Product, error) {
 }
 
 const listProducts = `-- name: ListProducts :many
-SELECT id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, source_code, created_at, updated_at, deleted_at FROM products WHERE deleted_at IS NULL ORDER BY name, id
+SELECT id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, brand, source_code, created_at, updated_at, deleted_at FROM products WHERE deleted_at IS NULL ORDER BY name, id
 `
 
 func (q *Queries) ListProducts(ctx context.Context) ([]Product, error) {
@@ -109,6 +113,7 @@ func (q *Queries) ListProducts(ctx context.Context) ([]Product, error) {
 			&i.ProteinG,
 			&i.CarbohydratesG,
 			&i.Nutrients,
+			&i.Brand,
 			&i.SourceCode,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -128,7 +133,7 @@ func (q *Queries) ListProducts(ctx context.Context) ([]Product, error) {
 }
 
 const listProductsByIDs = `-- name: ListProductsByIDs :many
-SELECT id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, source_code, created_at, updated_at, deleted_at FROM products WHERE id IN (/*SLICE:ids*/?) AND deleted_at IS NULL
+SELECT id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, brand, source_code, created_at, updated_at, deleted_at FROM products WHERE id IN (/*SLICE:ids*/?) AND deleted_at IS NULL
 `
 
 func (q *Queries) ListProductsByIDs(ctx context.Context, ids []string) ([]Product, error) {
@@ -159,6 +164,7 @@ func (q *Queries) ListProductsByIDs(ctx context.Context, ids []string) ([]Produc
 			&i.ProteinG,
 			&i.CarbohydratesG,
 			&i.Nutrients,
+			&i.Brand,
 			&i.SourceCode,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -197,9 +203,9 @@ func (q *Queries) SoftDeleteProduct(ctx context.Context, arg SoftDeleteProductPa
 
 const updateProduct = `-- name: UpdateProduct :one
 UPDATE products
-SET name = ?, unit = ?, energy_kcal = ?, fat_g = ?, protein_g = ?, carbohydrates_g = ?, nutrients = ?, updated_at = ?
+SET name = ?, unit = ?, energy_kcal = ?, fat_g = ?, protein_g = ?, carbohydrates_g = ?, nutrients = ?, brand = ?, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL
-RETURNING id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, source_code, created_at, updated_at, deleted_at
+RETURNING id, name, unit, energy_kcal, fat_g, protein_g, carbohydrates_g, nutrients, brand, source_code, created_at, updated_at, deleted_at
 `
 
 type UpdateProductParams struct {
@@ -210,6 +216,7 @@ type UpdateProductParams struct {
 	ProteinG       float64
 	CarbohydratesG float64
 	Nutrients      string
+	Brand          sql.NullString
 	UpdatedAt      string
 	ID             string
 }
@@ -223,6 +230,7 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (P
 		arg.ProteinG,
 		arg.CarbohydratesG,
 		arg.Nutrients,
+		arg.Brand,
 		arg.UpdatedAt,
 		arg.ID,
 	)
@@ -236,6 +244,7 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (P
 		&i.ProteinG,
 		&i.CarbohydratesG,
 		&i.Nutrients,
+		&i.Brand,
 		&i.SourceCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,

@@ -16,6 +16,8 @@ type Client struct {
 type Product struct {
 	Code             string
 	Name             string
+	Brand            string
+	ImageURL         string
 	NutritionDataPer string
 	Nutriments       map[string]float64
 }

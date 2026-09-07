@@ -1,6 +1,9 @@
 <script lang="ts">
 	import type { Component, Snippet } from 'svelte';
+	import * as Empty from '$lib/components/ui/empty';
 
+	// The registry's Empty, given this app's shape: an icon, a title, a sentence, and the
+	// action that resolves it embedded rather than left for the user to find elsewhere.
 	let {
 		icon: Icon,
 		title,
@@ -14,17 +17,19 @@
 	} = $props();
 </script>
 
-<div
-	class="border-muted-foreground/25 flex flex-col items-center justify-center rounded-lg border border-dashed px-6 py-14 text-center"
->
-	{#if Icon}
-		<Icon class="text-muted-foreground mb-3 size-8" />
-	{/if}
-	<p class="font-medium">{title}</p>
-	{#if description}
-		<p class="text-muted-foreground mt-1 max-w-sm text-sm">{description}</p>
-	{/if}
+<Empty.Root class="border">
+	<Empty.Header>
+		{#if Icon}
+			<Empty.Media variant="icon">
+				<Icon />
+			</Empty.Media>
+		{/if}
+		<Empty.Title>{title}</Empty.Title>
+		{#if description}
+			<Empty.Description>{description}</Empty.Description>
+		{/if}
+	</Empty.Header>
 	{#if action}
-		<div class="mt-5">{@render action()}</div>
+		<Empty.Content>{@render action()}</Empty.Content>
 	{/if}
-</div>
+</Empty.Root>

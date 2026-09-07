@@ -52,6 +52,7 @@ func fromRow(row db.Product) (domain.Product, error) {
 			CarbohydratesG: row.CarbohydratesG,
 		},
 		Nutrients:  nutrients,
+		Brand:      row.Brand.String,
 		SourceCode: row.SourceCode.String,
 		CreatedAt:  createdAt,
 		UpdatedAt:  updatedAt,

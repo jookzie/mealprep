@@ -4,6 +4,7 @@
 	import * as Command from '$lib/components/ui/command';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { formatKcal } from '$lib/domain/format';
+	import { byRecency } from '$lib/domain/sort';
 	import { fullDateLabel } from '$lib/domain/week';
 
 	let {
@@ -19,6 +20,10 @@
 		returnTo: string;
 		onChoose: (dayPlanId: string) => void;
 	} = $props();
+
+	// Most recently touched first. Alphabetical puts the plan you built a minute ago
+	// wherever its label happens to fall, which is never where you are looking.
+	const ordered = $derived(byRecency(dayPlans));
 </script>
 
 <Dialog.Root bind:open>
@@ -43,7 +48,7 @@
 				<Command.List>
 					<Command.Empty>No day plan found.</Command.Empty>
 					<Command.Group>
-						{#each dayPlans as plan (plan.id)}
+						{#each ordered as plan (plan.id)}
 							<Command.Item value={plan.label} onSelect={() => onChoose(plan.id)}>
 								<span class="flex-1 truncate">{plan.label}</span>
 								<span class="text-muted-foreground text-xs tabular-nums">

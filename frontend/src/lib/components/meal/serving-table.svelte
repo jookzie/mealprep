@@ -18,7 +18,9 @@
 		</Table.Row>
 	</Table.Header>
 	<Table.Body>
-		{#each rows as row (row.productId)}
+		<!-- A meal may legitimately hold the same product twice, so the id alone is not
+		     an identity for a row. -->
+		{#each rows as row, index (`${row.productId}-${index}`)}
 			<Table.Row>
 				<Table.Cell>
 					{#if row.product}

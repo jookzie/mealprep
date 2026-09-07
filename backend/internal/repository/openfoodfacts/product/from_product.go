@@ -44,6 +44,8 @@ func fromProduct(product openfoodfacts.Product) domain.CatalogEntry {
 			CarbohydratesG: carbohydrates,
 		},
 		Nutrients: nutrients,
+		Brand:     product.Brand,
+		ImageURL:  product.ImageURL,
 		Complete:  hasEnergy && hasFat && hasProtein && hasCarbohydrates,
 	}
 }

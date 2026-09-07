@@ -22,9 +22,14 @@ func (h Handler) GetDayPlan(c fiber.Ctx, dayPlanID api.DayPlanId) error {
 
 	meals := make([]api.DayPlanMeal, 0, len(p.Meals))
 	for _, m := range p.Meals {
+		servings := make([]api.Serving, 0, len(m.Servings))
+		for _, s := range m.Servings {
+			servings = append(servings, api.Serving{ProductId: s.ProductID, Amount: s.Amount})
+		}
 		meals = append(meals, api.DayPlanMeal{
-			Id:    m.ID,
-			Label: m.Label,
+			Id:       m.ID,
+			Label:    m.Label,
+			Servings: servings,
 			Macros: api.Macros{
 				EnergyKcal:     m.Macros.EnergyKcal,
 				FatG:           m.Macros.FatG,

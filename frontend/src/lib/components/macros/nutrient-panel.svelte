@@ -7,6 +7,8 @@
 	import { nutrientRows } from '$lib/domain/nutrients';
 
 	// PR-9: the four macros are shown directly, everything else sits behind this.
+	// Ordered and indented the way Regulation (EU) 1169/2011 Annex XV presents a
+	// nutrition declaration, since the catalog this data comes from is EU-origin.
 	let { nutrients, unit }: { nutrients: Nutrients | undefined; unit: Unit } = $props();
 
 	const rows = $derived(nutrientRows(nutrients));
@@ -34,7 +36,9 @@
 				<Table.Body>
 					{#each rows as row (row.key)}
 						<Table.Row>
-							<Table.Cell>{row.label}</Table.Cell>
+							<Table.Cell class={row.depth === 1 ? 'text-muted-foreground pl-6' : undefined}>
+								{row.label}
+							</Table.Cell>
 							<Table.Cell class="text-right tabular-nums">{row.value}</Table.Cell>
 						</Table.Row>
 					{/each}

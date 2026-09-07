@@ -87,37 +87,63 @@ set their own targets.
 ### 3.1 User interfaces
 A browser UI built from shadcn-svelte components, served as a static single-page app.
 Nutrients are shown as the four macros, with the full nutrient set behind an expansion
-(`PR-9`).
+(`PR-9`), ordered as Regulation (EU) 1169/2011 Annex XV presents a nutrition declaration.
 
-Navigation is a persistent sidebar listing Calendar, Day plans, Meals, Products and
-Targets, in that order. `/` redirects to the calendar. There is no separate dashboard:
-the calendar already carries the planned-against-target figures `TG-2` and `TG-3` ask for,
-and a second screen repeating them would be one more thing to keep true.
+Navigation is a persistent sidebar in two groups — **Plan** (Calendar, Day plans) and
+**Library** (Meals, Products) — with Targets in the footer as configuration rather than
+content. `/` redirects to the calendar: the working object is the root, and there is no
+dashboard, because every figure one would carry already lives on a screen that owns it.
+`⌘K` opens a command palette, and `⌘1`–`⌘4` go to the four sections.
 
 | Screen | Path | Serves |
 | --- | --- | --- |
-| Product list | `/products` | `PR-10` — the user's products, with delete |
+| Product list | `/products?sort=` | `PR-10`, `PR-11` — the user's products, sortable by name or any macro |
 | New product | `/products/new` | `PR-3`, `PR-7` — the four macros required, others optional |
-| Catalog search | `/products/search?q=` | `PR-1`, `PR-2`, `PR-8` — search and snapshot an entry |
+| Catalog search | `/products/search?q=` | `PR-1`, `PR-2`, `PR-8` — result rows with brand and the catalog's thumbnail |
 | Product detail | `/products/{id}` | `PR-9`, §6 — macros, nutrient expansion, source credit and link |
-| Edit product | `/products/{id}/edit` | `PR-10` |
+| Edit product | `/products/{id}/edit` | `PR-10` — also where an import lands, so its values are reviewed before they settle |
 | Meal list | `/meals` | `ML-5` |
-| New meal | `/meals/new` | `ML-1`, `ML-2` — products with serving sizes |
+| New meal | `/meals/new` | `ML-1`, `ML-2`, `ML-6` |
 | Meal detail | `/meals/{id}` | `ML-3`, `ML-4` — servings and the derived nutrients |
-| Edit meal | `/meals/{id}/edit` | `ML-5` |
+| Edit meal | `/meals/{id}/edit` | `ML-5`, `ML-6` |
 | Day plan list | `/day-plans` | `DP-5` |
-| New day plan | `/day-plans/new` | `DP-1`, `DP-2` |
-| Day plan detail | `/day-plans/{id}` | `DP-4`, `TG-2`, `TG-3` — the sum, against the targets |
-| Edit day plan | `/day-plans/{id}/edit` | `DP-5` |
-| Calendar | `/calendar?week=` | `CL-1`, `CL-2`, `CL-3`, `TG-2`, `TG-3` — a week, its assignments and totals |
+| New day plan | `/day-plans/new` | `DP-1`, `DP-2`, `DP-6` |
+| Day plan detail | `/day-plans/{id}` | `DP-4`, `TG-2`, `TG-3` — the sum against the targets, and the product-level breakdown |
+| Edit day plan | `/day-plans/{id}/edit` | `DP-5`, `DP-6` |
+| Calendar | `/calendar?week=` | `CL-1`–`CL-4`, `TG-2`, `TG-3` — a week, its assignments and totals |
 | Targets | `/targets` | `TG-1` |
 
 Creating and editing are screens rather than dialogs, because every write replaces the
-whole entity and so has to start from a fresh read. Dialogs carry the single-field
-actions: assigning a plan to a date, and confirming a delete.
+whole entity and so has to start from a fresh read. Dialogs carry what is genuinely one
+decision: assigning a plan to a date, applying a plan across weekdays, and confirming a
+delete.
 
-The calendar compares a week's total against the daily target multiplied by the days
-actually planned, so an unplanned day reads as unplanned rather than as a shortfall.
+**The composition editors** — meals and day plans — share one three-zone layout: identity,
+the ordered rows, and a derived total in a column beside them labelled *Calculated* and
+visibly not editable (`ML-3`, `DP-4`). Rows are added by picking the item, which creates
+the row already populated, and are reordered with move-up and move-down buttons. Reordering
+is never drag-only: WCAG 2.2 SC 2.5.7 requires a single-pointer alternative to any dragging
+motion, so buttons are the baseline rather than the fallback.
+
+**The calendar** is one row of seven columns, collapsing to a stacked day list on a narrow
+viewport. Each cell names the plan, its energy, a compact protein/fat/carbs line and the
+plan's meals. Totals sit in a strip above the grid, defaulting to the average over the days
+actually planned — the target the user set is a daily figure, so the week total cannot be
+read against it directly. An unplanned day reads as *unplanned* and stays out of that
+denominator, rather than reading as a shortfall.
+
+**Planned against target** is drawn as a meter per macro, never a ring: a ring encodes
+0–100% and has no honest way to render 130%, which `TG-3` requires. The target sits at a
+fixed mark on every row so rows and days compare by eye, and going over is drawn in the same
+macro colour under a hatch — differentiated by material, never by a warning hue.
+
+**Colour.** Protein, fat and carbs each carry a fixed hue in every view — Okabe-Ito orange,
+reddish purple and bluish green — held apart far enough to survive the common colour-vision
+deficiencies. Energy stays neutral, because it is the sum of the other three rather than a
+fourth sibling, and takes its prominence from size and position. No macro is red, and no
+macro uses the interactive accent: red in this application always means something is broken,
+never that a target was exceeded (`TG-3`). Colour is never the only channel — every figure
+is also labelled, and the series order never changes.
 
 ### 3.2 Hardware interfaces
 None. The application runs on commodity hardware and talks to no devices.
@@ -152,6 +178,7 @@ product joins their own set. Or the user fills in a product by hand and it joins
 - `PR-8` The system shall snapshot an imported product's data at pick time and shall not re-read it from OFF afterwards.
 - `PR-9` The system shall display the four macros, and shall offer the remaining nutrient information behind an expansion.
 - `PR-10` The system shall support create, read, update and delete for products, where delete is soft.
+- `PR-11` The system shall record a product's brand where the catalog carries one, and shall treat it as part of the product's identity rather than as presentation. It is optional for a product created by hand.
 
 ### 4.2 Meals
 **Description and priority.** A labeled set of products with serving sizes. High.
@@ -165,6 +192,7 @@ size. The meal is shown with its computed nutrients.
 - `ML-3` The system shall store a meal's composition only, and derive its nutrients on read.
 - `ML-4` The system shall show a meal's computed nutrients alongside it.
 - `ML-5` The system shall support create, read, update and delete for meals, where delete is soft.
+- `ML-6` The system shall let the user order a meal's servings, and shall preserve that order.
 
 ### 4.3 Day plans
 **Description and priority.** A labeled group of meals. High.
@@ -178,6 +206,7 @@ with the sum of its meals' nutrients.
 - `DP-3` A day plan shall carry no properties beyond its label and its meals.
 - `DP-4` The system shall show a day plan's nutrients as the sum of its meals'.
 - `DP-5` The system shall support create, read, update and delete for day plans, where delete is soft.
+- `DP-6` The system shall let the user order a day plan's meals, and shall preserve that order. A day plan has no time-of-day slots, so the order is the only sequence it carries.
 
 ### 4.4 Calendar
 **Description and priority.** Assignment of day plans to dates. Medium.
@@ -186,6 +215,7 @@ with the sum of its meals' nutrients.
 - `CL-1` The system shall let the user assign a day plan to a calendar day.
 - `CL-2` The system shall let the user view a week of calendar days with their assigned plans.
 - `CL-3` A calendar day shall hold at most one day plan. Assigning a plan to a day that already has one shall replace it.
+- `CL-4` The system shall let the user assign one day plan to several days of a week at once, naming the days it will touch before writing anything.
 
 ### 4.5 Targets and feedback
 **Description and priority.** The comparison the product exists for. Medium.
@@ -217,8 +247,8 @@ requires it to be rewritten first.
 
 ### 5.5 Logical database requirements
 The database stores products with their full nutrient set, meals with their servings, day
-plans, calendar assignments and targets. Nutrient totals are never stored; they are derived
-on read. Every entity carries `created_at`, `updated_at` and `deleted_at`; a delete sets
+plans with their meal order, calendar assignments and targets. Nutrient totals are never
+stored; they are derived on read. Every entity carries `created_at`, `updated_at` and `deleted_at`; a delete sets
 `deleted_at` and removes no row, and reads exclude soft-deleted rows unless asked otherwise.
 Schema: *To be determined* (TBD-12).
 

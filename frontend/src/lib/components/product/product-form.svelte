@@ -28,6 +28,7 @@
 	// Seeded once; the page re-seeds by keying this component on the entity.
 	const seed = untrack(() => initial);
 	let name = $state(seed.name);
+	let brand = $state(seed.brand ?? '');
 	let unit = $state<Unit>(seed.unit);
 	let energyKcal = $state<number | null>(seed.macros.energyKcal);
 	let proteinG = $state<number | null>(seed.macros.proteinG);
@@ -54,6 +55,9 @@
 		pending = true;
 		await onSubmit({
 			name: name.trim(),
+			// Brand is identity rather than presentation, but it is genuinely optional:
+			// a product entered by hand often has none.
+			brand: brand.trim() === '' ? undefined : brand.trim(),
 			unit,
 			macros: {
 				energyKcal: energyKcal as number,
@@ -68,10 +72,14 @@
 </script>
 
 <form class="space-y-6" onsubmit={submit}>
-	<div class="grid gap-4 sm:grid-cols-[1fr_10rem]">
+	<div class="grid gap-4 sm:grid-cols-[1fr_1fr_10rem]">
 		<div class="space-y-2">
 			<Label for="name">Name</Label>
 			<Input id="name" bind:value={name} placeholder="Rolled oats" required />
+		</div>
+		<div class="space-y-2">
+			<Label for="brand">Brand <span class="text-muted-foreground">optional</span></Label>
+			<Input id="brand" bind:value={brand} placeholder="Quaker" />
 		</div>
 		<div class="space-y-2">
 			<Label for="unit">Measured in</Label>

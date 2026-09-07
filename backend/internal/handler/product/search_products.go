@@ -23,6 +23,14 @@ func (h Handler) SearchProducts(c fiber.Ctx, params api.SearchProductsParams) er
 
 	response := api.SearchProductsResponse{Entries: make([]api.CatalogEntry, 0, len(entries))}
 	for _, e := range entries {
+		var brand *string
+		if e.Brand != "" {
+			brand = &e.Brand
+		}
+		var imageURL *string
+		if e.ImageURL != "" {
+			imageURL = &e.ImageURL
+		}
 		response.Entries = append(response.Entries, api.CatalogEntry{
 			Code: e.Code,
 			Name: e.Name,
@@ -34,6 +42,8 @@ func (h Handler) SearchProducts(c fiber.Ctx, params api.SearchProductsParams) er
 				CarbohydratesG: e.Macros.CarbohydratesG,
 			},
 			Nutrients: e.Nutrients,
+			Brand:     brand,
+			ImageUrl:  imageURL,
 			Complete:  e.Complete,
 		})
 	}

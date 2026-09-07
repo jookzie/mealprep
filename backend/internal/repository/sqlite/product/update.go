@@ -25,6 +25,7 @@ func (r Repository) Update(ctx context.Context, product domain.Product) (domain.
 		ProteinG:       product.Macros.ProteinG,
 		CarbohydratesG: product.Macros.CarbohydratesG,
 		Nutrients:      nutrients,
+		Brand:          sql.NullString{String: product.Brand, Valid: product.Brand != ""},
 		UpdatedAt:      sqliterepo.Now(),
 		ID:             product.ID.String(),
 	})

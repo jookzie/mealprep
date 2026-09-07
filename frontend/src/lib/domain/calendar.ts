@@ -18,6 +18,12 @@ export type PlannedWeek = {
 	days: PlannedDay[];
 	plannedCount: number;
 	total: Macros;
+	/**
+	 * The total over the days actually planned. The target the user set is a daily
+	 * figure, so this is the number that can be compared against it directly; the
+	 * week total cannot.
+	 */
+	averagePerPlannedDay: Macros | null;
 	targetPerDay: Macros | null;
 	/** The per-day target times the days actually planned, not times seven. */
 	targetTotal: Macros | null;
@@ -63,6 +69,7 @@ export function buildPlannedWeek(input: {
 		days,
 		plannedCount: planned.length,
 		total,
+		averagePerPlannedDay: planned.length === 0 ? null : scaleMacros(total, 1 / planned.length),
 		targetPerDay,
 		targetTotal: targetPerDay ? scaleMacros(targetPerDay, planned.length) : null,
 	};

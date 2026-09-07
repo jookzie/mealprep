@@ -4,7 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { duplicateKeys, type NutrientPair } from '$lib/domain/nutrient-pairs';
+	import { duplicateKeys, newPair, type NutrientPair } from '$lib/domain/nutrient-pairs';
 
 	// Whatever nutrients the source carried are kept (PR-6), so the vocabulary is open
 	// and edited as free key/value pairs rather than a fixed set of fields.
@@ -13,11 +13,11 @@
 	const duplicates = $derived(duplicateKeys(pairs));
 
 	function add() {
-		pairs = [...pairs, { key: '', value: '' }];
+		pairs = [...pairs, newPair()];
 	}
 
-	function remove(index: number) {
-		pairs = pairs.filter((_, i) => i !== index);
+	function remove(id: string) {
+		pairs = pairs.filter((pair) => pair.id !== id);
 	}
 </script>
 
@@ -36,7 +36,7 @@
 		</p>
 	{:else}
 		<ul class="space-y-2">
-			{#each pairs as pair, index (index)}
+			{#each pairs as pair, index (pair.id)}
 				<li class="flex items-start gap-2">
 					<div class="flex-1">
 						<Input
@@ -48,18 +48,19 @@
 					</div>
 					<div class="w-32">
 						<Input
-							type="number"
-							step="any"
+							type="text"
+							inputmode="decimal"
 							placeholder="0"
 							bind:value={pairs[index].value}
 							aria-label="Nutrient value"
+							class="tabular-nums"
 						/>
 					</div>
 					<Button
 						type="button"
 						variant="ghost"
 						size="icon"
-						onclick={() => remove(index)}
+						onclick={() => remove(pair.id)}
 						aria-label="Remove nutrient"
 					>
 						<XIcon class="size-4" />

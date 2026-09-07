@@ -3,7 +3,6 @@
 	import { createMeal, type MealDraft, runMutation } from '$lib/api';
 	import PageHeader from '$lib/components/app/page-header.svelte';
 	import MealForm from '$lib/components/meal/meal-form.svelte';
-	import * as Card from '$lib/components/ui/card';
 	import { emptyMealDraft } from '$lib/domain/meal';
 
 	let { data } = $props();
@@ -18,13 +17,10 @@
 
 <PageHeader title="New meal" description="Serving sizes are in each product's own unit." />
 
-<Card.Root>
-	<Card.Content class="pt-6">
-		<MealForm
-			initial={emptyMealDraft()}
-			products={data.products}
-			submitLabel="Create meal"
-			onSubmit={create}
-		/>
-	</Card.Content>
-</Card.Root>
+<MealForm
+	initial={emptyMealDraft()}
+	products={data.products}
+	targets={data.targets?.macros ?? null}
+	submitLabel="Create meal"
+	onSubmit={create}
+/>

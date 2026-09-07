@@ -62,6 +62,7 @@ type Product struct {
 	ProteinG       float64
 	CarbohydratesG float64
 	Nutrients      string
+	Brand          sql.NullString
 	SourceCode     sql.NullString
 	CreatedAt      string
 	UpdatedAt      string

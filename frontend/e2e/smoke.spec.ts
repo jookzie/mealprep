@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { type APIRequestContext, expect, test } from '@playwright/test';
 
 // One run builds a product, a meal that uses it, a plan that groups the meal, and
 // puts that plan on a date — the dependency order the requirements describe. Names
@@ -8,7 +8,29 @@ const PRODUCT = `E2E Oats ${run}`;
 const MEAL = `E2E Porridge ${run}`;
 const PLAN = `E2E Training day ${run}`;
 
+/** The Monday of the current week, the same way the app computes it. */
+function thisMonday(): string {
+	const now = new Date();
+	const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+	today.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
+	return today.toISOString().slice(0, 10);
+}
+
 test.describe.configure({ mode: 'serial' });
+
+const API = 'http://localhost:8080/v1';
+
+/**
+ * The suite runs against a real, persistent database, so a week a previous run left
+ * assignments in is not empty. Anything asserting "0 of 7" clears its own week first.
+ */
+async function clearWeek(request: APIRequestContext, monday: string) {
+	const start = new Date(`${monday}T00:00:00Z`);
+	for (let day = 0; day < 7; day++) {
+		const date = new Date(start.getTime() + day * 86_400_000).toISOString().slice(0, 10);
+		await request.delete(`${API}/calendar/${date}`);
+	}
+}
 
 test('the backend is reachable', async ({ request }) => {
 	const response = await request.get('http://localhost:8080/livez');
@@ -25,6 +47,20 @@ test('targets can be set and are shown back', async ({ page }) => {
 
 	await expect(page.getByText('Current targets')).toBeVisible();
 	await expect(page.getByText('2,400 kcal').or(page.getByText('2400 kcal'))).toBeVisible();
+});
+
+test('a decimal typed with a comma is kept, not silently dropped', async ({ page }) => {
+	await page.goto('/products/new');
+	await page.getByLabel('Name').fill(`E2E Comma ${run}`);
+	await page.getByLabel('Energy').fill('380');
+	await page.getByLabel('Protein').fill('13');
+	// A European keyboard writes this; Number('7,5') is NaN, which used to empty the field.
+	await page.getByLabel('Fat').fill('7,5');
+	await page.getByLabel('Carbs').fill('60');
+	await page.getByRole('button', { name: 'Create product' }).click();
+
+	await expect(page.getByRole('heading', { name: `E2E Comma ${run}` })).toBeVisible();
+	await expect(page.getByText('7.5 g')).toBeVisible();
 });
 
 test('a product can be created by hand', async ({ page }) => {
@@ -44,17 +80,35 @@ test('a product can be created by hand', async ({ page }) => {
 	await expect(page.getByRole('link', { name: PRODUCT })).toBeVisible();
 });
 
+test('the product list sorts by a macro, and says so', async ({ page }) => {
+	await page.goto('/products');
+	await page.getByRole('button', { name: /^Energy/ }).click();
+
+	await expect(page).toHaveURL(/sort=energyKcal%3Adesc/);
+	// The ordering is announced, not only drawn.
+	await expect(page.locator('th', { hasText: 'Energy' })).toHaveAttribute(
+		'aria-sort',
+		'descending',
+	);
+});
+
 test('a meal derives its macros from its servings', async ({ page }) => {
 	await page.goto('/meals/new');
 	await page.getByLabel('Label').fill(MEAL);
-	await page.getByRole('button', { name: 'Add serving' }).click();
-	await page.getByRole('combobox').click();
-	await page.getByRole('option', { name: PRODUCT }).click();
-	await page.locator('input[type="number"]').first().fill('50');
-	await page.getByRole('button', { name: 'Create meal' }).click();
 
-	await expect(page.getByRole('heading', { name: MEAL })).toBeVisible();
+	// Picking the product is what creates the row: there is no empty row to fill first,
+	// and focus lands in the amount so the run of typing continues.
+	await page.getByRole('combobox', { name: 'Add a product…' }).click();
+	await page.getByRole('option', { name: PRODUCT }).click();
+	const amount = page.getByLabel(`Amount of ${PRODUCT}`);
+	await expect(amount).toBeFocused();
+
 	// 50 g of a product listed per 100 g is half of it: 380 kcal -> 190 kcal.
+	await amount.fill('50');
+	await expect(page.getByText('190 kcal').first()).toBeVisible();
+
+	await page.getByRole('button', { name: 'Create meal' }).click();
+	await expect(page.getByRole('heading', { name: MEAL })).toBeVisible();
 	await expect(page.getByText('190 kcal').first()).toBeVisible();
 });
 
@@ -63,31 +117,77 @@ test('a day plan sums its meals and is measured against the targets', async ({ p
 	await page.getByLabel('Label').fill(PLAN);
 	await page.getByRole('button', { name: 'Add meal' }).click();
 	await page.getByRole('option', { name: new RegExp(MEAL) }).click();
-	await page.keyboard.press('Escape');
 	await page.getByRole('button', { name: 'Create day plan' }).click();
 
 	await expect(page.getByRole('heading', { name: PLAN })).toBeVisible();
 	await expect(page.getByText('190 kcal').first()).toBeVisible();
 	// Targets are shown alongside, and nothing about being under them blocks anything.
-	await expect(page.getByText(/of 2,?400 kcal/)).toBeVisible();
+	await expect(page.getByText(/of 2,?400 kcal/).first()).toBeVisible();
 });
 
-test('a plan can be put on a date, replaced and cleared', async ({ page }) => {
+test('a plan can be put on a date, replaced and cleared', async ({ page, request }) => {
+	await clearWeek(request, thisMonday());
 	await page.goto('/calendar');
 	await expect(page.getByText('0 of 7 days planned')).toBeVisible();
 
-	await page.getByRole('button', { name: 'Assign a plan' }).first().click();
+	await page.getByRole('button', { name: 'Assign' }).first().click();
 	await page.getByRole('option', { name: new RegExp(PLAN) }).click();
 	await expect(page.getByText('1 of 7 days planned')).toBeVisible();
 	await expect(page.getByRole('link', { name: PLAN })).toBeVisible();
 
 	// A day holds one plan, so assigning again replaces rather than adds (CL-3).
-	await page.getByRole('button', { name: 'Replace' }).first().click();
+	await page
+		.getByRole('button', { name: /^Change / })
+		.first()
+		.click();
+	await page.getByRole('menuitem', { name: 'Replace plan' }).click();
 	await page.getByRole('option', { name: new RegExp(PLAN) }).click();
 	await expect(page.getByText('1 of 7 days planned')).toBeVisible();
 
-	await page.getByRole('button', { name: 'Clear' }).first().click();
+	await page
+		.getByRole('button', { name: /^Change / })
+		.first()
+		.click();
+	await page.getByRole('menuitem', { name: 'Clear day' }).click();
 	await expect(page.getByText('0 of 7 days planned')).toBeVisible();
+});
+
+test('an unplanned day reads as unplanned and stays out of the denominator', async ({
+	page,
+	request,
+}) => {
+	// The app's best idea, and the thing no shipped planner gets right: an empty day
+	// must never read as 0 kcal, which would look like a catastrophic shortfall.
+	await clearWeek(request, '2026-02-02');
+	await page.goto('/calendar?week=2026-02-02');
+	await expect(page.getByText('0 of 7 days planned')).toBeVisible();
+	await expect(page.getByText('Unplanned').first()).toBeVisible();
+
+	await page.getByRole('button', { name: 'Assign' }).first().click();
+	await page.getByRole('option', { name: new RegExp(PLAN) }).click();
+	await expect(page.getByText('1 of 7 days planned')).toBeVisible();
+
+	// The per-day average divides by the one day planned, not by seven.
+	await expect(page.getByText('190 kcal').first()).toBeVisible();
+});
+
+test('one plan can be applied to several weekdays at once', async ({ page, request }) => {
+	await clearWeek(request, '2026-03-02');
+	await page.goto('/calendar?week=2026-03-02');
+	await expect(page.getByText('0 of 7 days planned')).toBeVisible();
+
+	await page.getByRole('button', { name: 'Apply a plan' }).click();
+	await page.getByRole('button', { name: 'Day plan' }).click();
+	await page.getByRole('option', { name: new RegExp(PLAN) }).click();
+	await page.getByRole('button', { name: 'Mon' }).click();
+	await page.getByRole('button', { name: 'Wed' }).click();
+	await page.getByRole('button', { name: 'Fri' }).click();
+
+	// The dates it will touch are named before anything is written.
+	await expect(page.getByText('3 days will be assigned.')).toBeVisible();
+	await page.getByRole('button', { name: 'Apply plan' }).click();
+
+	await expect(page.getByText('3 of 7 days planned')).toBeVisible();
 });
 
 test('the calendar pages between weeks through the URL', async ({ page }) => {
@@ -108,6 +208,17 @@ test('the calendar pages between weeks through the URL', async ({ page }) => {
 	await expect(page.getByText(`${label('2026-01-12')} – ${label('2026-01-18')}`)).toBeVisible();
 });
 
+test('the command palette goes to a screen without touching the mouse', async ({ page }) => {
+	await page.goto('/calendar');
+	// The shortcut is a window listener, so it only exists once the page has hydrated.
+	await expect(page.getByText(/of 7 days planned/)).toBeVisible();
+	await page.keyboard.press('ControlOrMeta+k');
+	await expect(page.getByPlaceholder('Go to a screen, or start something new…')).toBeVisible();
+
+	await page.getByRole('option', { name: 'Products' }).click();
+	await expect(page).toHaveURL(/\/products$/);
+});
+
 test('a meal whose product was deleted still renders', async ({ page }) => {
 	// Products are soft-deleted and then never returned, so this join misses. The meal
 	// must still open, with the gap named rather than swallowed.
@@ -126,10 +237,9 @@ test('a meal whose product was deleted still renders', async ({ page }) => {
 
 	await page.goto('/meals/new');
 	await page.getByLabel('Label').fill(meal);
-	await page.getByRole('button', { name: 'Add serving' }).click();
-	await page.getByRole('combobox').click();
+	await page.getByRole('combobox', { name: 'Add a product…' }).click();
 	await page.getByRole('option', { name: doomed }).click();
-	await page.locator('input[type="number"]').first().fill('100');
+	await page.getByLabel(`Amount of ${doomed}`).fill('100');
 	await page.getByRole('button', { name: 'Create meal' }).click();
 	await expect(page.getByRole('heading', { name: meal })).toBeVisible();
 	const mealUrl = page.url();

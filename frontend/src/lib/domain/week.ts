@@ -42,6 +42,33 @@ export function weekRange(weekStart: IsoDate): { from: IsoDate; to: IsoDate } {
 	return { from: weekStart, to: shiftDays(weekStart, 6) };
 }
 
+/** Monday is 0, matching the order weekDates returns and the grid draws. */
+export function weekdayIndex(date: IsoDate): number {
+	return (parse(date).getUTCDay() + 6) % 7;
+}
+
+/** Every date from `from` to `to` inclusive; empty when the range runs backwards. */
+export function datesInRange(from: IsoDate, to: IsoDate): IsoDate[] {
+	const dates: IsoDate[] = [];
+	for (let date = from; date <= to; date = shiftDays(date, 1)) {
+		dates.push(date);
+	}
+	return dates;
+}
+
+/**
+ * The dates a bulk assignment would touch: every day in the range whose weekday was
+ * chosen. Assigning one plan to Mon/Wed/Fri is otherwise a dialog per day.
+ */
+export function datesMatchingWeekdays(
+	from: IsoDate,
+	to: IsoDate,
+	weekdays: readonly number[],
+): IsoDate[] {
+	const chosen = new Set(weekdays);
+	return datesInRange(from, to).filter((date) => chosen.has(weekdayIndex(date)));
+}
+
 export function shiftWeeks(weekStart: IsoDate, delta: number): IsoDate {
 	return shiftDays(weekStart, delta * 7);
 }

@@ -1,5 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { isIsoDate, shiftWeeks, startOfIsoWeek, weekDates, weekdayLabel, weekRange } from './week';
+import {
+	datesInRange,
+	datesMatchingWeekdays,
+	isIsoDate,
+	shiftWeeks,
+	startOfIsoWeek,
+	weekDates,
+	weekdayIndex,
+	weekdayLabel,
+	weekRange,
+} from './week';
 
 describe('startOfIsoWeek', () => {
 	test('a Monday is its own week start', () => {
@@ -78,4 +88,32 @@ describe('isIsoDate', () => {
 		expect(isIsoDate(null)).toBe(false);
 		expect(isIsoDate(undefined)).toBe(false);
 	});
+});
+
+test('the weekday index counts from Monday, as the grid draws it', () => {
+	expect(weekdayIndex('2026-08-31')).toBe(0); // Monday
+	expect(weekdayIndex('2026-09-06')).toBe(6); // Sunday
+});
+
+test('a range covers both its ends', () => {
+	expect(datesInRange('2026-08-31', '2026-09-02')).toEqual([
+		'2026-08-31',
+		'2026-09-01',
+		'2026-09-02',
+	]);
+	expect(datesInRange('2026-09-02', '2026-08-31')).toEqual([]);
+});
+
+test('a bulk assignment picks only the weekdays that were chosen', () => {
+	// Mon and Fri across a fortnight starting Monday 31 Aug 2026.
+	expect(datesMatchingWeekdays('2026-08-31', '2026-09-13', [0, 4])).toEqual([
+		'2026-08-31',
+		'2026-09-04',
+		'2026-09-07',
+		'2026-09-11',
+	]);
+});
+
+test('choosing no weekdays touches no days', () => {
+	expect(datesMatchingWeekdays('2026-08-31', '2026-09-13', [])).toEqual([]);
 });

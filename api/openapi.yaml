@@ -500,6 +500,9 @@ components:
           $ref: "#/components/schemas/Macros"
         nutrients:
           $ref: "#/components/schemas/Nutrients"
+        brand:
+          type: string
+          description: Who makes it; snapshotted at import and part of the product's identity, not its presentation
         sourceCode:
           type: string
           description: Open Food Facts code the snapshot came from; absent when created by hand
@@ -521,6 +524,8 @@ components:
           $ref: "#/components/schemas/Macros"
         nutrients:
           $ref: "#/components/schemas/Nutrients"
+        brand:
+          type: string
     CatalogEntry:
       type: object
       required: [code, name, unit, macros, nutrients, complete]
@@ -535,6 +540,13 @@ components:
           $ref: "#/components/schemas/Macros"
         nutrients:
           $ref: "#/components/schemas/Nutrients"
+        brand:
+          type: string
+          description: First of the catalog's brand tags; several entries often share a name and differ only by this
+        imageUrl:
+          type: string
+          format: uri
+          description: Catalog-hosted thumbnail, linked rather than copied because the images carry a different licence from the data
         complete:
           type: boolean
           description: False when one of the four macros is missing, which makes the entry unimportable
@@ -664,13 +676,18 @@ components:
 
     DayPlanMeal:
       type: object
-      required: [id, label, macros]
+      required: [id, label, servings, macros]
       properties:
         id:
           type: string
           format: uuid
         label:
           type: string
+        servings:
+          type: array
+          description: Carried so a day plan can be broken down to products without a second read of every meal
+          items:
+            $ref: "#/components/schemas/Serving"
         macros:
           $ref: "#/components/schemas/Macros"
     DayPlan:

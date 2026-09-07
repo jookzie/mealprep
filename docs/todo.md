@@ -38,3 +38,14 @@ Each entry records what happens today, what is deferred, and what would trigger 
 - **Deferred**: dropping the flag once the support leaves experimental, or adding
   `prettier-plugin-svelte` for `.svelte` alone if the markup formatter proves unreliable.
 - **Trigger**: a Biome release that stabilises it, or formatting churn that costs review time.
+
+## Schema changes against an existing database
+- **Today**: `backend/sqlc/sqlite/schema.sql` is applied at startup with
+  `CREATE TABLE IF NOT EXISTS`, so a fresh database gets the current schema and an existing
+  one keeps whatever it already had. Adding `products.brand` needed a manual
+  `ALTER TABLE products ADD COLUMN brand TEXT` against the development database; SQLite has
+  no `ADD COLUMN IF NOT EXISTS`, so the statement cannot simply live in `schema.sql`.
+- **Deferred**: a migration mechanism — numbered files with a `schema_version` table, or a
+  library — so a column can be added without a hand-run statement.
+- **Trigger**: the second schema change that has to reach a database someone cares about,
+  or the application being deployed anywhere its data cannot be recreated.

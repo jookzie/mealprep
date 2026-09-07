@@ -20,6 +20,10 @@ func (h Handler) GetProduct(c fiber.Ctx, productID api.ProductId) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(api.ErrorResponse{Message: "internal error"})
 	}
 
+	var brand *string
+	if p.Brand != "" {
+		brand = &p.Brand
+	}
 	var sourceCode *string
 	if p.SourceCode != "" {
 		sourceCode = &p.SourceCode
@@ -36,6 +40,7 @@ func (h Handler) GetProduct(c fiber.Ctx, productID api.ProductId) error {
 			CarbohydratesG: p.Macros.CarbohydratesG,
 		},
 		Nutrients:  p.Nutrients,
+		Brand:      brand,
 		SourceCode: sourceCode,
 		CreatedAt:  p.CreatedAt,
 		UpdatedAt:  p.UpdatedAt,

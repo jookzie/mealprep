@@ -4,7 +4,6 @@
 	import { createDayPlan, type DayPlanDraft, runMutation } from '$lib/api';
 	import PageHeader from '$lib/components/app/page-header.svelte';
 	import DayPlanForm from '$lib/components/day-plan/day-plan-form.svelte';
-	import * as Card from '$lib/components/ui/card';
 	import { emptyDayPlanDraft } from '$lib/domain/day-plan';
 
 	let { data } = $props();
@@ -23,13 +22,10 @@
 
 <PageHeader title="New day plan" description="A label and the meals it groups." />
 
-<Card.Root>
-	<Card.Content class="pt-6">
-		<DayPlanForm
-			initial={emptyDayPlanDraft()}
-			meals={data.meals}
-			submitLabel="Create day plan"
-			onSubmit={create}
-		/>
-	</Card.Content>
-</Card.Root>
+<DayPlanForm
+	initial={emptyDayPlanDraft()}
+	meals={data.meals}
+	targets={data.targets?.macros ?? null}
+	submitLabel="Create day plan"
+	onSubmit={create}
+/>

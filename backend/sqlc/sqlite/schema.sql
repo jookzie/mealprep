@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS products (
     protein_g       REAL NOT NULL,
     carbohydrates_g REAL NOT NULL,
     nutrients       TEXT NOT NULL,
+    brand           TEXT,
     source_code     TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,

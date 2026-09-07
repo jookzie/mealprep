@@ -3,6 +3,7 @@ import type { Macros } from '../api/gen/types.gen';
 import {
 	addMacros,
 	deviation,
+	impliedEnergyKcal,
 	ratio,
 	scaleMacros,
 	servingMacros,
@@ -62,4 +63,16 @@ test('deviation is signed: over target is positive, under is negative', () => {
 test('a zero target has no ratio rather than an infinite one', () => {
 	expect(ratio(150, 0)).toBe(0);
 	expect(ratio(150, 300)).toBe(0.5);
+});
+
+test('the macro grams imply an energy figure of their own', () => {
+	// 180 g protein, 80 g fat and 220 g carbs is 2320 kcal on the 4/9/4 factors,
+	// whatever the energy target happens to say.
+	expect(
+		impliedEnergyKcal({ energyKcal: 2400, proteinG: 180, fatG: 80, carbohydratesG: 220 }),
+	).toBe(2320);
+});
+
+test('the implied energy ignores the energy figure entirely', () => {
+	expect(impliedEnergyKcal({ energyKcal: 9999, proteinG: 0, fatG: 0, carbohydratesG: 0 })).toBe(0);
 });

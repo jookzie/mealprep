@@ -21,6 +21,10 @@ func (h Handler) UpdateProduct(c fiber.Ctx, productID api.ProductId) error {
 	if request.Nutrients != nil {
 		nutrients = *request.Nutrients
 	}
+	var requestBrand string
+	if request.Brand != nil {
+		requestBrand = *request.Brand
+	}
 
 	p, err := h.products.Update(c.Context(), domain.Product{
 		ID:   productID,
@@ -33,6 +37,7 @@ func (h Handler) UpdateProduct(c fiber.Ctx, productID api.ProductId) error {
 			CarbohydratesG: request.Macros.CarbohydratesG,
 		},
 		Nutrients: nutrients,
+		Brand:     requestBrand,
 	})
 
 	var notFound errorx.ErrNotFound
@@ -45,6 +50,10 @@ func (h Handler) UpdateProduct(c fiber.Ctx, productID api.ProductId) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(api.ErrorResponse{Message: "internal error"})
 	}
 
+	var brand *string
+	if p.Brand != "" {
+		brand = &p.Brand
+	}
 	var sourceCode *string
 	if p.SourceCode != "" {
 		sourceCode = &p.SourceCode
@@ -61,6 +70,7 @@ func (h Handler) UpdateProduct(c fiber.Ctx, productID api.ProductId) error {
 			CarbohydratesG: p.Macros.CarbohydratesG,
 		},
 		Nutrients:  p.Nutrients,
+		Brand:      brand,
 		SourceCode: sourceCode,
 		CreatedAt:  p.CreatedAt,
 		UpdatedAt:  p.UpdatedAt,

@@ -112,3 +112,37 @@ test('assignments outside the week are ignored', () => {
 	});
 	expect(week.plannedCount).toBe(0);
 });
+
+describe('the per-day average', () => {
+	// The target the user set is a daily figure, so the week total cannot be compared
+	// against it directly. The average over the planned days can.
+	test('divides by the days planned, not by seven', () => {
+		const week = buildPlannedWeek({
+			weekStart: WEEK_START,
+			days: [assignment('2026-08-31', 'a'), assignment('2026-09-01', 'b')],
+			dayPlans: [plan('a', 1800), plan('b', 2200)],
+			targets,
+		});
+		expect(week.averagePerPlannedDay?.energyKcal).toBe(2000);
+	});
+
+	test('a day whose plan was deleted stays out of the denominator', () => {
+		const week = buildPlannedWeek({
+			weekStart: WEEK_START,
+			days: [assignment('2026-08-31', 'a'), assignment('2026-09-01', 'gone')],
+			dayPlans: [plan('a', 1800)],
+			targets,
+		});
+		expect(week.averagePerPlannedDay?.energyKcal).toBe(1800);
+	});
+
+	test('a week with nothing planned has no average rather than a zero', () => {
+		const week = buildPlannedWeek({
+			weekStart: WEEK_START,
+			days: [],
+			dayPlans: [],
+			targets,
+		});
+		expect(week.averagePerPlannedDay).toBeNull();
+	});
+});

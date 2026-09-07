@@ -2,7 +2,6 @@
 	import { type MealDraft, runMutation, updateMeal } from '$lib/api';
 	import PageHeader from '$lib/components/app/page-header.svelte';
 	import MealForm from '$lib/components/meal/meal-form.svelte';
-	import * as Card from '$lib/components/ui/card';
 	import { toMealDraft } from '$lib/domain/meal';
 
 	let { data } = $props();
@@ -22,10 +21,12 @@
 	description="The label and the whole set of servings are replaced on save."
 />
 
-<Card.Root>
-	<Card.Content class="pt-6">
-		{#key data.meal.updatedAt}
-			<MealForm {initial} products={data.products} submitLabel="Save meal" onSubmit={save} />
-		{/key}
-	</Card.Content>
-</Card.Root>
+{#key data.meal.updatedAt}
+	<MealForm
+		{initial}
+		products={data.products}
+		targets={data.targets?.macros ?? null}
+		submitLabel="Save meal"
+		onSubmit={save}
+	/>
+{/key}

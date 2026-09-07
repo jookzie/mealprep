@@ -20,6 +20,10 @@ func (h Handler) CreateProduct(c fiber.Ctx) error {
 	if request.Nutrients != nil {
 		nutrients = *request.Nutrients
 	}
+	var requestBrand string
+	if request.Brand != nil {
+		requestBrand = *request.Brand
+	}
 
 	p, err := h.products.Create(c.Context(), domain.Product{
 		Name: request.Name,
@@ -31,6 +35,7 @@ func (h Handler) CreateProduct(c fiber.Ctx) error {
 			CarbohydratesG: request.Macros.CarbohydratesG,
 		},
 		Nutrients: nutrients,
+		Brand:     requestBrand,
 	})
 
 	switch {
@@ -38,6 +43,11 @@ func (h Handler) CreateProduct(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(api.ErrorResponse{Message: err.Error()})
 	case err != nil:
 		return c.Status(fiber.StatusInternalServerError).JSON(api.ErrorResponse{Message: "internal error"})
+	}
+
+	var brand *string
+	if p.Brand != "" {
+		brand = &p.Brand
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(api.CreateProductResponse{Product: api.Product{
@@ -51,6 +61,7 @@ func (h Handler) CreateProduct(c fiber.Ctx) error {
 			CarbohydratesG: p.Macros.CarbohydratesG,
 		},
 		Nutrients: p.Nutrients,
+		Brand:     brand,
 		CreatedAt: p.CreatedAt,
 		UpdatedAt: p.UpdatedAt,
 	}})
