@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { CalendarDay, DayPlan, Macros, Targets } from '../api/gen/types.gen';
-import { buildPlannedWeek } from './calendar';
+import { buildPlannedPeriod, buildPlannedWeek } from './calendar';
 import { ZERO_MACROS } from './macros';
 
 const WEEK_START = '2026-08-31';
@@ -144,5 +144,55 @@ describe('the per-day average', () => {
 			targets,
 		});
 		expect(week.averagePerPlannedDay).toBeNull();
+	});
+});
+
+describe('a four-week block', () => {
+	const period = buildPlannedPeriod({
+		weekStart: WEEK_START,
+		days: [
+			assignment('2026-08-31', 'a'), // week 1
+			assignment('2026-09-08', 'b'), // week 2
+			assignment('2026-09-16', 'gone'), // week 3, plan deleted
+			assignment('2026-10-05', 'a'), // outside the block
+		],
+		dayPlans: [plan('a', 1800), plan('b', 2200)],
+		targets,
+	});
+
+	test('holds four weeks of seven days', () => {
+		expect(period.weeks).toHaveLength(4);
+		expect(period.weeks.flatMap((w) => w.days)).toHaveLength(28);
+		expect(period.dayCount).toBe(28);
+	});
+
+	test('each week is joined the same way as a standalone week', () => {
+		expect(period.weeks[0].days[0].dayPlan?.id).toBe('a');
+		expect(period.weeks[1].days[1].dayPlan?.id).toBe('b');
+	});
+
+	test('an assignment past the block is left out', () => {
+		expect(period.plannedCount).toBe(2);
+		expect(period.total.energyKcal).toBe(4000);
+	});
+
+	test('a deleted plan stays out of the denominator here too', () => {
+		expect(period.weeks[2].plannedCount).toBe(0);
+		expect(period.averagePerPlannedDay?.energyKcal).toBe(2000);
+	});
+
+	test('the block target is the daily target times the days actually planned', () => {
+		expect(period.targetTotal?.energyKcal).toBe(4000);
+	});
+
+	test('a block with nothing planned has no average rather than a zero', () => {
+		const empty = buildPlannedPeriod({
+			weekStart: WEEK_START,
+			days: [],
+			dayPlans: [],
+			targets,
+		});
+		expect(empty.averagePerPlannedDay).toBeNull();
+		expect(empty.plannedCount).toBe(0);
 	});
 });

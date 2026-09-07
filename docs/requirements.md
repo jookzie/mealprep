@@ -97,20 +97,20 @@ dashboard, because every figure one would carry already lives on a screen that o
 
 | Screen | Path | Serves |
 | --- | --- | --- |
-| Product list | `/products?sort=` | `PR-10`, `PR-11` — the user's products, sortable by name or any macro |
+| Product list | `/products?sort=` | `PR-10`, `PR-11` — sortable by name or any macro, each macro column shaded against its own range |
 | New product | `/products/new` | `PR-3`, `PR-7` — the four macros required, others optional |
 | Catalog search | `/products/search?q=` | `PR-1`, `PR-2`, `PR-8` — result rows with brand and the catalog's thumbnail |
 | Product detail | `/products/{id}` | `PR-9`, §6 — macros, nutrient expansion, source credit and link |
 | Edit product | `/products/{id}/edit` | `PR-10` — also where an import lands, so its values are reviewed before they settle |
-| Meal list | `/meals` | `ML-5` |
+| Meal list | `/meals?sort=` | `ML-5` — the same table as the product list, shaded the same way |
 | New meal | `/meals/new` | `ML-1`, `ML-2`, `ML-6` |
 | Meal detail | `/meals/{id}` | `ML-3`, `ML-4` — servings and the derived nutrients |
 | Edit meal | `/meals/{id}/edit` | `ML-5`, `ML-6` |
-| Day plan list | `/day-plans` | `DP-5` |
+| Day plan list | `/day-plans` | `DP-5`, `TG-2` — the four figures against the target, with a radar of the same four |
 | New day plan | `/day-plans/new` | `DP-1`, `DP-2`, `DP-6` |
 | Day plan detail | `/day-plans/{id}` | `DP-4`, `TG-2`, `TG-3` — the sum against the targets, and the product-level breakdown |
 | Edit day plan | `/day-plans/{id}/edit` | `DP-5`, `DP-6` |
-| Calendar | `/calendar?week=` | `CL-1`–`CL-4`, `TG-2`, `TG-3` — a week, its assignments and totals |
+| Calendar | `/calendar?week=` | `CL-1`–`CL-4`, `TG-2`, `TG-3` — four weeks, their assignments and totals |
 | Targets | `/targets` | `TG-1` |
 
 Creating and editing are screens rather than dialogs, because every write replaces the
@@ -125,12 +125,25 @@ the row already populated, and are reordered with move-up and move-down buttons.
 is never drag-only: WCAG 2.2 SC 2.5.7 requires a single-pointer alternative to any dragging
 motion, so buttons are the baseline rather than the fallback.
 
-**The calendar** is one row of seven columns, collapsing to a stacked day list on a narrow
-viewport. Each cell names the plan, its energy, a compact protein/fat/carbs line and the
-plan's meals. Totals sit in a strip above the grid, defaulting to the average over the days
-actually planned — the target the user set is a daily figure, so the week total cannot be
-read against it directly. An unplanned day reads as *unplanned* and stays out of that
-denominator, rather than reading as a shortfall.
+**The calendar** shows four weeks at a time as four rows of seven columns, collapsing to a
+stacked day list on a narrow viewport, and pages by the whole block rather than by one week
+(`CL-5`). Each cell names the plan, its energy, a compact protein/fat/carbs line and the
+plan's meals; each week row carries its own days-planned count and energy per day. Totals
+sit in a strip above the grid, defaulting to the average over the days actually planned —
+the target the user set is a daily figure, so a four-week total cannot be read against it
+directly. An unplanned day reads as *unplanned* and stays out of every denominator, rather
+than reading as a shortfall.
+
+**The entity tables** shade each macro column between that column's smallest and largest
+value, in that macro's own hue. The shading answers "how does this row compare to the others
+here" and is rescaled by filtering, so it never implies an absolute verdict; every shaded
+cell prints its figure, so colour is a second channel and never the only one.
+
+**A day plan's four figures** are shown as numbers with their deviation, beside a radar of
+the same four. Each axis is a fraction of its own target, because kcal and grams cannot share
+a scale, and the emphasised ring is the target; without targets the largest value on each
+axis across the plans stands in, so the shapes still compare to each other. The radar is a
+companion to the figures and never replaces them — a shape cannot be read back to grams.
 
 **Planned against target** is drawn as a meter per macro, never a ring: a ring encodes
 0–100% and has no honest way to render 130%, which `TG-3` requires. The target sits at a
@@ -215,7 +228,8 @@ with the sum of its meals' nutrients.
 - `CL-1` The system shall let the user assign a day plan to a calendar day.
 - `CL-2` The system shall let the user view a week of calendar days with their assigned plans.
 - `CL-3` A calendar day shall hold at most one day plan. Assigning a plan to a day that already has one shall replace it.
-- `CL-4` The system shall let the user assign one day plan to several days of a week at once, naming the days it will touch before writing anything.
+- `CL-4` The system shall let the user assign one day plan to several days at once, across the weeks in view or one of them, naming the days it will touch before writing anything.
+- `CL-5` The system shall show four consecutive weeks at a time, and shall page forward and back by four weeks.
 
 ### 4.5 Targets and feedback
 **Description and priority.** The comparison the product exists for. Medium.

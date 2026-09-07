@@ -20,13 +20,16 @@ test.describe.configure({ mode: 'serial' });
 
 const API = 'http://localhost:8080/v1';
 
+/** The calendar shows four weeks at a time and pages by the whole block. */
+const DAYS_IN_VIEW = 28;
+
 /**
- * The suite runs against a real, persistent database, so a week a previous run left
- * assignments in is not empty. Anything asserting "0 of 7" clears its own week first.
+ * The suite runs against a real, persistent database, so a block a previous run left
+ * assignments in is not empty. Anything asserting "0 of 28" clears its own block first.
  */
-async function clearWeek(request: APIRequestContext, monday: string) {
+async function clearBlock(request: APIRequestContext, monday: string) {
 	const start = new Date(`${monday}T00:00:00Z`);
-	for (let day = 0; day < 7; day++) {
+	for (let day = 0; day < DAYS_IN_VIEW; day++) {
 		const date = new Date(start.getTime() + day * 86_400_000).toISOString().slice(0, 10);
 		await request.delete(`${API}/calendar/${date}`);
 	}
@@ -92,6 +95,17 @@ test('the product list sorts by a macro, and says so', async ({ page }) => {
 	);
 });
 
+test('the meal list is a table that sorts like the product list', async ({ page }) => {
+	await page.goto('/meals');
+	await page.getByRole('button', { name: /^Protein/ }).click();
+
+	await expect(page).toHaveURL(/sort=proteinG%3Adesc/);
+	await expect(page.locator('th', { hasText: 'Protein' })).toHaveAttribute(
+		'aria-sort',
+		'descending',
+	);
+});
+
 test('a meal derives its macros from its servings', async ({ page }) => {
 	await page.goto('/meals/new');
 	await page.getByLabel('Label').fill(MEAL);
@@ -126,13 +140,13 @@ test('a day plan sums its meals and is measured against the targets', async ({ p
 });
 
 test('a plan can be put on a date, replaced and cleared', async ({ page, request }) => {
-	await clearWeek(request, thisMonday());
+	await clearBlock(request, thisMonday());
 	await page.goto('/calendar');
-	await expect(page.getByText('0 of 7 days planned')).toBeVisible();
+	await expect(page.getByText('0 of 28 days planned')).toBeVisible();
 
 	await page.getByRole('button', { name: 'Assign' }).first().click();
 	await page.getByRole('option', { name: new RegExp(PLAN) }).click();
-	await expect(page.getByText('1 of 7 days planned')).toBeVisible();
+	await expect(page.getByText('1 of 28 days planned')).toBeVisible();
 	await expect(page.getByRole('link', { name: PLAN })).toBeVisible();
 
 	// A day holds one plan, so assigning again replaces rather than adds (CL-3).
@@ -142,14 +156,14 @@ test('a plan can be put on a date, replaced and cleared', async ({ page, request
 		.click();
 	await page.getByRole('menuitem', { name: 'Replace plan' }).click();
 	await page.getByRole('option', { name: new RegExp(PLAN) }).click();
-	await expect(page.getByText('1 of 7 days planned')).toBeVisible();
+	await expect(page.getByText('1 of 28 days planned')).toBeVisible();
 
 	await page
 		.getByRole('button', { name: /^Change / })
 		.first()
 		.click();
 	await page.getByRole('menuitem', { name: 'Clear day' }).click();
-	await expect(page.getByText('0 of 7 days planned')).toBeVisible();
+	await expect(page.getByText('0 of 28 days planned')).toBeVisible();
 });
 
 test('an unplanned day reads as unplanned and stays out of the denominator', async ({
@@ -158,27 +172,32 @@ test('an unplanned day reads as unplanned and stays out of the denominator', asy
 }) => {
 	// The app's best idea, and the thing no shipped planner gets right: an empty day
 	// must never read as 0 kcal, which would look like a catastrophic shortfall.
-	await clearWeek(request, '2026-02-02');
+	await clearBlock(request, '2026-02-02');
 	await page.goto('/calendar?week=2026-02-02');
-	await expect(page.getByText('0 of 7 days planned')).toBeVisible();
+	await expect(page.getByText('0 of 28 days planned')).toBeVisible();
 	await expect(page.getByText('Unplanned').first()).toBeVisible();
 
 	await page.getByRole('button', { name: 'Assign' }).first().click();
 	await page.getByRole('option', { name: new RegExp(PLAN) }).click();
-	await expect(page.getByText('1 of 7 days planned')).toBeVisible();
+	await expect(page.getByText('1 of 28 days planned')).toBeVisible();
 
 	// The per-day average divides by the one day planned, not by seven.
 	await expect(page.getByText('190 kcal').first()).toBeVisible();
 });
 
 test('one plan can be applied to several weekdays at once', async ({ page, request }) => {
-	await clearWeek(request, '2026-03-02');
+	await clearBlock(request, '2026-03-02');
 	await page.goto('/calendar?week=2026-03-02');
-	await expect(page.getByText('0 of 7 days planned')).toBeVisible();
+	await expect(page.getByText('0 of 28 days planned')).toBeVisible();
 
 	await page.getByRole('button', { name: 'Apply a plan' }).click();
 	await page.getByRole('button', { name: 'Day plan' }).click();
 	await page.getByRole('option', { name: new RegExp(PLAN) }).click();
+
+	// Scoped to one week of the four on screen, so the count is checkable.
+	await page.getByRole('button', { name: 'Weeks' }).click();
+	await page.getByRole('option').nth(1).click();
+
 	await page.getByRole('button', { name: 'Mon' }).click();
 	await page.getByRole('button', { name: 'Wed' }).click();
 	await page.getByRole('button', { name: 'Fri' }).click();
@@ -187,7 +206,7 @@ test('one plan can be applied to several weekdays at once', async ({ page, reque
 	await expect(page.getByText('3 days will be assigned.')).toBeVisible();
 	await page.getByRole('button', { name: 'Apply plan' }).click();
 
-	await expect(page.getByText('3 of 7 days planned')).toBeVisible();
+	await expect(page.getByText('3 of 28 days planned')).toBeVisible();
 });
 
 test('the calendar pages between weeks through the URL', async ({ page }) => {
@@ -199,19 +218,24 @@ test('the calendar pages between weeks through the URL', async ({ page }) => {
 		);
 
 	// A Monday well away from today, so the way back to the current week is offered.
+	// The block spans four weeks, so 5 Jan runs to 1 Feb.
 	await page.goto('/calendar?week=2026-01-05');
-	await expect(page.getByText(`${label('2026-01-05')} – ${label('2026-01-11')}`)).toBeVisible();
+	await expect(page.getByText(`${label('2026-01-05')} – ${label('2026-02-01')}`)).toBeVisible();
 	await expect(page.getByRole('link', { name: 'This week' })).toBeVisible();
 
-	await page.getByTitle('Next week').click();
-	await expect(page).toHaveURL(/week=2026-01-12/);
-	await expect(page.getByText(`${label('2026-01-12')} – ${label('2026-01-18')}`)).toBeVisible();
+	// Paging moves the whole block: four weeks on, not one.
+	await page.getByTitle('Next 4 weeks').click();
+	await expect(page).toHaveURL(/week=2026-02-02/);
+	await expect(page.getByText(`${label('2026-02-02')} – ${label('2026-03-01')}`)).toBeVisible();
+
+	await page.getByTitle('Previous 4 weeks').click();
+	await expect(page).toHaveURL(/week=2026-01-05/);
 });
 
 test('the command palette goes to a screen without touching the mouse', async ({ page }) => {
 	await page.goto('/calendar');
 	// The shortcut is a window listener, so it only exists once the page has hydrated.
-	await expect(page.getByText(/of 7 days planned/)).toBeVisible();
+	await expect(page.getByText(/of 28 days planned/)).toBeVisible();
 	await page.keyboard.press('ControlOrMeta+k');
 	await expect(page.getByPlaceholder('Go to a screen, or start something new…')).toBeVisible();
 

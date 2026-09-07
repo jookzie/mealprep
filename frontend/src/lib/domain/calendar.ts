@@ -1,6 +1,6 @@
 import type { CalendarDay, DayPlan, Macros, Targets } from '../api/gen/types.gen';
 import { addMacros, scaleMacros, ZERO_MACROS } from './macros';
-import { type IsoDate, weekDates } from './week';
+import { type IsoDate, periodWeekStarts, weekDates } from './week';
 
 export type PlannedDay = {
 	date: IsoDate;
@@ -72,5 +72,50 @@ export function buildPlannedWeek(input: {
 		averagePerPlannedDay: planned.length === 0 ? null : scaleMacros(total, 1 / planned.length),
 		targetPerDay,
 		targetTotal: targetPerDay ? scaleMacros(targetPerDay, planned.length) : null,
+	};
+}
+
+export type PlannedPeriod = {
+	/** The first week of the block; paging moves by the whole block. */
+	weekStart: IsoDate;
+	weeks: PlannedWeek[];
+	plannedCount: number;
+	dayCount: number;
+	total: Macros;
+	averagePerPlannedDay: Macros | null;
+	targetPerDay: Macros | null;
+	targetTotal: Macros | null;
+};
+
+/**
+ * A block of consecutive weeks, each built by the same join as a single week, so the
+ * period and the rows inside it cannot disagree about a day.
+ *
+ * The unplanned-day rule carries all the way up: a day with no plan, or one whose plan
+ * has been deleted, is excluded from every denominator here too.
+ */
+export function buildPlannedPeriod(input: {
+	weekStart: IsoDate;
+	days: readonly CalendarDay[];
+	dayPlans: readonly DayPlan[];
+	targets: Targets | null;
+}): PlannedPeriod {
+	const weeks = periodWeekStarts(input.weekStart).map((weekStart) =>
+		buildPlannedWeek({ ...input, weekStart }),
+	);
+
+	const plannedCount = weeks.reduce((sum, week) => sum + week.plannedCount, 0);
+	const total = weeks.reduce((sum, week) => addMacros(sum, week.total), ZERO_MACROS);
+	const targetPerDay = input.targets?.macros ?? null;
+
+	return {
+		weekStart: input.weekStart,
+		weeks,
+		plannedCount,
+		dayCount: weeks.length * 7,
+		total,
+		averagePerPlannedDay: plannedCount === 0 ? null : scaleMacros(total, 1 / plannedCount),
+		targetPerDay,
+		targetTotal: targetPerDay ? scaleMacros(targetPerDay, plannedCount) : null,
 	};
 }

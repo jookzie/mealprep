@@ -9,6 +9,9 @@ import {
 	weekdayIndex,
 	weekdayLabel,
 	weekRange,
+	WEEKS_IN_VIEW,
+	periodRange,
+	periodWeekStarts,
 } from './week';
 
 describe('startOfIsoWeek', () => {
@@ -116,4 +119,23 @@ test('a bulk assignment picks only the weekdays that were chosen', () => {
 
 test('choosing no weekdays touches no days', () => {
 	expect(datesMatchingWeekdays('2026-08-31', '2026-09-13', [])).toEqual([]);
+});
+
+test('the calendar block is four weeks and starts where it is asked to', () => {
+	expect(periodWeekStarts('2026-08-31')).toEqual([
+		'2026-08-31',
+		'2026-09-07',
+		'2026-09-14',
+		'2026-09-21',
+	]);
+});
+
+test('the block spans twenty-eight days inclusive', () => {
+	expect(periodRange('2026-08-31')).toEqual({ from: '2026-08-31', to: '2026-09-27' });
+	expect(datesInRange('2026-08-31', '2026-09-27')).toHaveLength(28);
+});
+
+test('paging moves by the whole block, not by one week', () => {
+	expect(shiftWeeks('2026-08-31', WEEKS_IN_VIEW)).toBe('2026-09-28');
+	expect(shiftWeeks('2026-08-31', -WEEKS_IN_VIEW)).toBe('2026-08-03');
 });

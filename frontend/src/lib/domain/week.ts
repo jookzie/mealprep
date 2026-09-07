@@ -73,6 +73,17 @@ export function shiftWeeks(weekStart: IsoDate, delta: number): IsoDate {
 	return shiftDays(weekStart, delta * 7);
 }
 
+/** The calendar shows a block of weeks at a time, and pages by the whole block. */
+export const WEEKS_IN_VIEW = 4;
+
+export function periodWeekStarts(weekStart: IsoDate): IsoDate[] {
+	return Array.from({ length: WEEKS_IN_VIEW }, (_, i) => shiftWeeks(weekStart, i));
+}
+
+export function periodRange(weekStart: IsoDate): { from: IsoDate; to: IsoDate } {
+	return { from: weekStart, to: shiftDays(weekStart, WEEKS_IN_VIEW * 7 - 1) };
+}
+
 const weekday = new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' });
 const dayMonth = new Intl.DateTimeFormat(undefined, {
 	day: 'numeric',
@@ -102,6 +113,16 @@ export function fullDateLabel(date: IsoDate): string {
 export function weekLabel(weekStart: IsoDate): string {
 	const { from, to } = weekRange(weekStart);
 	return `${dayMonthLabel(from)} – ${dayMonthLabel(to)}`;
+}
+
+export function periodLabel(weekStart: IsoDate): string {
+	const { from, to } = periodRange(weekStart);
+	return `${dayMonthLabel(from)} – ${dayMonthLabel(to)}`;
+}
+
+/** Which week of the block a date falls in, so today's row can be marked. */
+export function isCurrentWeek(weekStart: IsoDate): boolean {
+	return startOfIsoWeek(todayIso()) === weekStart;
 }
 
 export function isToday(date: IsoDate): boolean {

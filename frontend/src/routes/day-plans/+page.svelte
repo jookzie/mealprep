@@ -5,11 +5,20 @@
 	import PageHeader from '$lib/components/app/page-header.svelte';
 	import DayPlanList from '$lib/components/day-plan/day-plan-list.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { maxima } from '$lib/domain/radar';
 	import { sortRows } from '$lib/domain/sort';
 
 	let { data } = $props();
 
 	const shown = $derived(sortRows(data.dayPlans, { key: 'name', direction: 'asc' }));
+
+	// Without targets there is no shared denominator, so the largest value on each axis
+	// across the plans stands in: the shapes still compare, they just compare to the
+	// biggest plan rather than to a goal.
+	const relativeTo = $derived(data.targets ? ('target' as const) : ('largest' as const));
+	const denominator = $derived(
+		data.targets?.macros ?? maxima(data.dayPlans.map((plan) => plan.macros))
+	);
 </script>
 
 <PageHeader title="Day plans" description="Groups of meals, ready to put on a date.">
@@ -32,5 +41,11 @@
 		{/snippet}
 	</EmptyState>
 {:else}
-	<DayPlanList dayPlans={shown} />
+	{#if !data.targets}
+		<p class="text-muted-foreground text-sm">
+			<a href="/targets" class="underline underline-offset-4">Set your daily targets</a>
+			to compare these against them; for now each shape is drawn against the largest plan.
+		</p>
+	{/if}
+	<DayPlanList dayPlans={shown} {denominator} {relativeTo} />
 {/if}

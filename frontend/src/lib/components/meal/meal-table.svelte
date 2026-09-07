@@ -1,6 +1,6 @@
 <script lang="ts">
 	import PencilIcon from '@lucide/svelte/icons/pencil';
-	import { deleteProduct, type Product } from '$lib/api';
+	import { deleteMeal, type Meal } from '$lib/api';
 	import DeleteAction from '$lib/components/app/delete-action.svelte';
 	import SortableHead from '$lib/components/app/sortable-head.svelte';
 	import MacroCell from '$lib/components/macros/macro-cell.svelte';
@@ -9,21 +9,15 @@
 	import { columnScale } from '$lib/domain/heatmap';
 	import { MACRO_KEYS, MACRO_LABELS } from '$lib/domain/macros';
 	import type { Sort, SortKey } from '$lib/domain/sort';
-	import OffCredit from './off-credit.svelte';
 
-	// The two things anyone actually sorts a food list by are energy and protein, and
-	// until now it could be sorted by neither.
-	let {
-		products,
-		sort,
-		onSort
-	}: { products: Product[]; sort: Sort; onSort: (key: SortKey) => void } = $props();
+	// Meals are compared against each other the same way products are, so they get the
+	// same table rather than a second layout that happens to show the same figures.
+	let { meals, sort, onSort }: { meals: Meal[]; sort: Sort; onSort: (key: SortKey) => void } =
+		$props();
 
-	// Shading is relative to what is on screen, so filtering the list rescales it and
-	// the comparison stays about the rows the user is actually looking at.
 	const scales = $derived(
 		Object.fromEntries(
-			MACRO_KEYS.map((key) => [key, columnScale(products.map((p) => p.macros[key]))])
+			MACRO_KEYS.map((key) => [key, columnScale(meals.map((m) => m.macros[key]))])
 		) as Record<(typeof MACRO_KEYS)[number], (value: number) => number>
 	);
 </script>
@@ -31,7 +25,7 @@
 <Table.Root>
 	<Table.Header>
 		<Table.Row>
-			<SortableHead label="Product" sortKey="name" {sort} {onSort} />
+			<SortableHead label="Meal" sortKey="name" {sort} {onSort} />
 			{#each MACRO_KEYS as key (key)}
 				<SortableHead label={MACRO_LABELS[key]} sortKey={key} {sort} {onSort} align="right" />
 			{/each}
@@ -39,35 +33,32 @@
 		</Table.Row>
 	</Table.Header>
 	<Table.Body>
-		{#each products as product (product.id)}
+		{#each meals as meal (meal.id)}
 			<Table.Row>
 				<Table.Cell>
-					<div class="flex flex-wrap items-center gap-2">
-						<a href="/products/{product.id}" class="font-medium hover:underline">{product.name}</a>
-						<OffCredit sourceCode={product.sourceCode} />
-					</div>
+					<a href="/meals/{meal.id}" class="font-medium hover:underline">{meal.label}</a>
 					<p class="text-muted-foreground text-xs">
-						{#if product.brand}{product.brand} · {/if}per 100 {product.unit}
+						{meal.servings.length}
+						{meal.servings.length === 1 ? 'serving' : 'servings'}
 					</p>
 				</Table.Cell>
 				{#each MACRO_KEYS as key (key)}
 					<MacroCell
-						value={product.macros[key]}
+						value={meal.macros[key]}
 						macro={key}
-						intensity={scales[key](product.macros[key])}
+						intensity={scales[key](meal.macros[key])}
 					/>
 				{/each}
 				<Table.Cell>
 					<div class="flex items-center justify-end gap-1">
-						<Button href="/products/{product.id}/edit" variant="ghost" size="icon" title="Edit">
+						<Button href="/meals/{meal.id}/edit" variant="ghost" size="icon" title="Edit">
 							<PencilIcon class="size-4" />
 						</Button>
 						<DeleteAction
-							name={product.name}
+							name={meal.label}
 							size="icon"
-							description="The product is removed from your list. Meals that use it will show it as removed."
-							action={() =>
-								deleteProduct({ path: { productId: product.id }, throwOnError: true })}
+							description="The meal is removed. Day plans that use it will show it as removed."
+							action={() => deleteMeal({ path: { mealId: meal.id }, throwOnError: true })}
 						/>
 					</div>
 				</Table.Cell>

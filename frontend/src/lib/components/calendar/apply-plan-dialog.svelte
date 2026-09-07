@@ -7,7 +7,15 @@
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import { formatKcal } from '$lib/domain/format';
 	import { byRecency } from '$lib/domain/sort';
-	import { type IsoDate, datesMatchingWeekdays, weekDates, weekdayLabel } from '$lib/domain/week';
+	import {
+		type IsoDate,
+		datesMatchingWeekdays,
+		periodWeekStarts,
+		weekDates,
+		weekLabel,
+		weekRange,
+		weekdayLabel
+	} from '$lib/domain/week';
 
 	/*
 	 * Assigning one plan to Monday, Wednesday and Friday is otherwise five separate
@@ -35,15 +43,26 @@
 	} = $props();
 
 	const ordered = $derived(byRecency(dayPlans));
+	// Weekday buttons are labelled from the first visible week, but the labels are the
+	// same for every week in the block.
 	const dates = $derived(weekDates(weekStart));
+	const weekStarts = $derived(periodWeekStarts(weekStart));
 
 	let dayPlanId = $state('');
 	let weekdays = $state<string[]>([]);
+	// Which of the visible weeks to touch: 'all', or one week's start date. The dialog
+	// is opened from a four-week view, so applying to only the first would silently
+	// ignore three quarters of what is on screen.
+	let scope = $state<string>('all');
 	let pending = $state(false);
 
 	const selected = $derived(ordered.find((plan) => plan.id === dayPlanId));
+	const scopeStarts = $derived(scope === 'all' ? weekStarts : [scope]);
 	const targets = $derived(
-		datesMatchingWeekdays(dates[0], dates[6], weekdays.map(Number))
+		scopeStarts.flatMap((start) => {
+			const { from, to } = weekRange(start);
+			return datesMatchingWeekdays(from, to, weekdays.map(Number));
+		})
 	);
 	const replacing = $derived(targets.filter((date) => plannedDates.includes(date)).length);
 	const valid = $derived(dayPlanId !== '' && targets.length > 0);
@@ -55,13 +74,14 @@
 		pending = false;
 		open = false;
 		weekdays = [];
+		scope = 'all';
 	}
 </script>
 
 <Dialog.Root bind:open>
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Apply a plan across the week</Dialog.Title>
+			<Dialog.Title>Apply a plan across the weeks</Dialog.Title>
 			<Dialog.Description>
 				Pick a plan and the days it belongs on. A day holds one plan, so any day you choose that
 				already has one is replaced.
@@ -86,6 +106,25 @@
 										{formatKcal(plan.macros.energyKcal)}
 									</span>
 								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<div class="space-y-2">
+					<Label for="apply-scope">Weeks</Label>
+					<Select.Root type="single" bind:value={scope}>
+						<Select.Trigger id="apply-scope" class="w-full">
+							{scope === 'all'
+								? `All ${weekStarts.length} weeks`
+								: weekLabel(scope)}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="all" label="All {weekStarts.length} weeks">
+								All {weekStarts.length} weeks
+							</Select.Item>
+							{#each weekStarts as start (start)}
+								<Select.Item value={start} label={weekLabel(start)}>{weekLabel(start)}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>

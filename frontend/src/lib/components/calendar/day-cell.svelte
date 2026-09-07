@@ -36,8 +36,12 @@
 	<!-- A fixed height so the seven headers line up whether or not the day has a menu. -->
 	<div class="flex h-10 items-center justify-between gap-1 border-b px-3">
 		<div class="flex items-baseline gap-1.5">
-			<span class="text-sm font-medium">{weekdayLabel(day.date)}</span>
-			<span class="text-muted-foreground text-xs tabular-nums">{dayMonthLabel(day.date)}</span>
+			<!-- The weekday is a column header on a wide screen; below the breakpoint the
+			     grid becomes a stacked list and each cell has to name its own day. -->
+			<span class="text-sm font-medium lg:hidden">{weekdayLabel(day.date)}</span>
+			<span class="text-muted-foreground text-xs tabular-nums lg:text-sm lg:font-medium lg:text-foreground">
+				{dayMonthLabel(day.date)}
+			</span>
 		</div>
 		{#if day.dayPlanId}
 			<DropdownMenu.Root>
@@ -70,7 +74,9 @@
 			<MacroStrip macros={day.macros} />
 			{#if day.dayPlan.meals.length > 0}
 				<ul class="text-muted-foreground mt-auto space-y-0.5 text-xs">
-					{#each day.dayPlan.meals as meal (meal.id)}
+					<!-- A plan may hold the same meal twice — "Office lunch 2x" is one meal
+					     listed twice — so the meal id alone is not an identity for a row. -->
+					{#each day.dayPlan.meals as meal, index (`${meal.id}-${index}`)}
 						<li class="truncate">{meal.label}</li>
 					{/each}
 				</ul>
