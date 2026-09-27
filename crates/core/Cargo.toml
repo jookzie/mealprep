@@ -1,0 +1,20 @@
+[package]
+name = "mealprep-core"
+version = "0.1.0"
+description = "Domain types, business rules and storage contracts of Mealprep"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+time.workspace = true
+trait-variant.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

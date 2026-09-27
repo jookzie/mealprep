@@ -1,149 +1,237 @@
 [tools]
-go = "1.26.5"
-golangci-lint = "2.13.2"
-lefthook = "2.1.12"
-sqlc = "1.31.1"
 bun = "1.4.2"
-biome = "2.5.12"
-vacuum = "0.30.3"
-typos = "1.50.1"
+
+# Rust is not listed: the workspace pins rust-version 1.94 and the Android builds
+# need the four `rustup target add` cross-compilation targets, so the toolchain is
+# managed by rustup and picked up from PATH.
 
 [env]
-# Local development settings; see .env.example for the full set.
-_.file = ".env"
+# Android tooling resolves its user directory from XDG_CONFIG_HOME, which Omarchy
+# sets, and would look for AVDs and the debug keystore under ~/.config/.android.
+# The AVD and the keystore that signed the installed app live in ~/.android; a
+# mismatch shows up as INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+ANDROID_USER_HOME = "{{env.HOME}}/.android"
 
-# Aggregates run both sides. Every task below is namespaced by the side it acts on,
-# except the ones that act on the repository as a whole.
+# Aggregates run both sides. Tasks are namespaced by the side they act on, except
+# the ones that act on the repository as a whole.
 
 [tasks.format]
 description = "Format the whole tree"
-depends = ["backend:format", "frontend:format"]
+depends = ["rust:format"]
 
 [tasks."format:check"]
 description = "Fail if the tree is not formatted"
-depends = ["backend:format:check", "frontend:format:check"]
+depends = ["rust:format:check"]
 
 [tasks.lint]
 description = "Lint the whole tree"
-depends = ["openapi:lint", "backend:lint", "frontend:lint"]
+depends = ["rust:lint"]
+
+[tasks.check]
+description = "Typecheck the frontend and lint the Rust workspace"
+depends = ["frontend:check", "rust:lint"]
 
 [tasks.test]
 description = "Run every test suite"
-depends = ["backend:test", "frontend:test"]
+depends = ["rust:test", "frontend:test"]
 
 [tasks.dev]
-description = "Run the backend and the frontend dev server together"
-depends = ["backend:start", "frontend:dev"]
+description = "Run the desktop app against the Vite dev server"
+dir = "{{config_root}}"
+run = "bun --bun run tauri dev"
 
-[tasks."backend:format"]
-description = "Format the Go codebase"
-dir = "{{config_root}}/backend"
-run = "golangci-lint fmt ./..."
+[tasks."rust:format"]
+description = "Format the Rust workspace"
+dir = "{{config_root}}"
+run = "cargo fmt --all"
 
-[tasks."backend:format:check"]
-description = "Fail if the Go codebase is not formatted"
-dir = "{{config_root}}/backend"
-run = "golangci-lint fmt --diff ./..."
+[tasks."rust:format:check"]
+description = "Fail if the Rust workspace is not formatted"
+dir = "{{config_root}}"
+run = "cargo fmt --all -- --check"
 
-[tasks."backend:lint"]
-description = "Lint the Go codebase"
-dir = "{{config_root}}/backend"
-run = "golangci-lint run ./..."
+[tasks."rust:lint"]
+description = "Lint the Rust workspace"
+dir = "{{config_root}}"
+run = "cargo clippy --workspace --all-targets -- -D warnings"
 
-[tasks."backend:test"]
-description = "Run the Go tests"
-dir = "{{config_root}}/backend"
-run = "go test ./..."
-
-[tasks."backend:start"]
-description = "Run the backend"
-dir = "{{config_root}}/backend"
-run = "go run ./cmd/app"
+[tasks."rust:test"]
+description = "Run the Rust tests"
+dir = "{{config_root}}"
+run = "cargo test --workspace"
 
 [tasks."frontend:install"]
 description = "Install the frontend dependencies"
-dir = "{{config_root}}/frontend"
+dir = "{{config_root}}"
 run = "bun install"
 
 [tasks."frontend:dev"]
-description = "Run the frontend dev server"
-dir = "{{config_root}}/frontend"
+description = "Run the Vite dev server on its own"
+dir = "{{config_root}}"
 run = "bun --bun run dev"
 
 [tasks."frontend:build"]
 description = "Build the frontend into static files"
-dir = "{{config_root}}/frontend"
+dir = "{{config_root}}"
 run = "bun --bun run build"
 
 [tasks."frontend:check"]
-description = "Typecheck the frontend against the generated client"
-dir = "{{config_root}}/frontend"
+description = "Typecheck the frontend"
+dir = "{{config_root}}"
 run = "bun --bun run check"
-
-[tasks."frontend:format"]
-description = "Format the frontend"
-dir = "{{config_root}}/frontend"
-run = "biome format --write ."
-
-[tasks."frontend:format:check"]
-description = "Fail if the frontend is not formatted"
-dir = "{{config_root}}/frontend"
-run = "biome format ."
-
-[tasks."frontend:lint"]
-description = "Lint the frontend"
-dir = "{{config_root}}/frontend"
-run = "biome lint ."
 
 [tasks."frontend:test"]
 description = "Run the frontend unit tests"
-dir = "{{config_root}}/frontend"
-# Scoped to src: bun test's default patterns would otherwise pick up the Playwright
-# specs in e2e/, which need a browser and a running backend.
+# Scoped to src: bun test's default patterns would otherwise walk the Rust target
+# and node_modules trees.
+dir = "{{config_root}}"
 run = "bun test src"
 
-[tasks."frontend:e2e"]
-description = "Run the Playwright smoke tests (backend must be running)"
-dir = "{{config_root}}/frontend"
-run = "bun --bun run test:e2e"
-
-[tasks."frontend:e2e:network"]
-description = "Run the Playwright tests that reach Open Food Facts"
-dir = "{{config_root}}/frontend"
-run = "E2E_NETWORK=1 bunx playwright test"
-
-[tasks."openapi:lint"]
-description = "Lint api/openapi.yaml, the contract both generators read"
+[tasks."android:dev"]
+description = "Build, install and run the app on the running emulator or device"
 dir = "{{config_root}}"
-run = "vacuum lint --ruleset .vacuum.yaml --details --fail-severity warn api/openapi.yaml"
+run = "bun --bun run tauri android dev"
 
-[tasks."openapi:gen:backend"]
-description = "Regenerate the Go API from api/openapi.yaml"
-dir = "{{config_root}}/backend"
-run = "go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml"
-
-[tasks."openapi:gen:frontend"]
-description = "Regenerate the TypeScript client from api/openapi.yaml"
-dir = "{{config_root}}/frontend"
-run = "bunx openapi-ts"
-
-[tasks."openapi:gen"]
-description = "Regenerate both sides of the API from api/openapi.yaml"
-depends = ["openapi:gen:backend", "openapi:gen:frontend"]
-
-[tasks."sqlc:gen"]
-description = "Regenerate the SQLite data access layer from backend/sqlc/sqlite"
-dir = "{{config_root}}/backend"
-run = "sqlc generate"
-
-[tasks.typos]
-description = "Spell-check the tree"
+[tasks."android:build"]
+description = "Build a debug APK for the emulator"
 dir = "{{config_root}}"
-run = "typos"
+run = "bun --bun run tauri android build --debug --apk"
 
-[tasks.hooks]
-description = "Install the lefthook git hooks"
-run = "lefthook install"
+[tasks."android:build:release"]
+description = "Build a signed release APK for the phone (arm64)"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Checked here rather than left to Gradle: without the file the release build
+# still succeeds and silently produces an unsigned APK, which fails at install
+# time with no hint as to why.
+props="src-tauri/gen/android/keystore.properties"
+if [ ! -f "$props" ]; then
+  cat >&2 <<EOF
+android:build:release: $props is missing, so the APK would build unsigned.
+
+Write it with the release keystore's details (the file is gitignored):
+
+  storeFile=/absolute/path/to/release.jks
+  storePassword=...
+  keyAlias=...
+  keyPassword=...
+
+If there is no keystore yet, create one first, and keep it: an update can only
+be signed with the key that signed the install it replaces.
+
+  keytool -genkeypair -v -keystore ~/.android/mealprep-release.jks \\
+    -keyalg RSA -keysize 2048 -validity 10000 -alias mealprep
+EOF
+  exit 1
+fi
+
+bun --bun run tauri android build --target aarch64 --apk
+'''
+
+[tasks."android:db:pull"]
+description = "Copy the database off the device into backups/"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The debug install is the only one reachable: run-as refuses a release build
+# ("package not debuggable"), and the app's data directory is private otherwise.
+package="com.mertan.mealprep.debug"
+adb="${ANDROID_HOME:-$HOME/Android/Sdk}/platform-tools/adb"
+[ -x "$adb" ] || adb=$(command -v adb) || { echo "android:db:pull: no adb found" >&2; exit 1; }
+
+if [ -z "$("$adb" devices | sed -n '2,$p' | grep -w device || true)" ]; then
+  echo "android:db:pull: no device. Wireless debugging announces itself over mDNS:" >&2
+  echo "  avahi-browse -rpt _adb-tls-connect._tcp   then   adb connect <ip>:<port>" >&2
+  exit 1
+fi
+
+if ! "$adb" shell run-as "$package" true 2>/dev/null; then
+  echo "android:db:pull: cannot read $package (not installed, or not a debug build)." >&2
+  echo "Install the debug build first: mise run android:dev" >&2
+  exit 1
+fi
+
+stamp=$(date +%Y%m%d-%H%M%S)
+mkdir -p backups
+
+# The store runs in WAL mode, so the sidecars carry writes the main file does not
+# yet have. All three travel together or the copy is stale.
+for suffix in "" "-wal" "-shm"; do
+  remote="/data/data/$package/mealprep.db$suffix"
+  if "$adb" shell run-as "$package" test -f "$remote" 2>/dev/null; then
+    "$adb" exec-out run-as "$package" cat "$remote" > "backups/mealprep-$stamp.db$suffix"
+    echo "pulled mealprep.db$suffix"
+  fi
+done
+
+ls -la "backups/mealprep-$stamp.db"*
+'''
+
+[tasks."android:db:push"]
+description = "Replace the database on the device with a local file"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+local_db="${1:-}"
+[ -n "$local_db" ] || { echo "usage: mise run android:db:push -- <file.db>" >&2; exit 1; }
+[ -f "$local_db" ] || { echo "android:db:push: no such file: $local_db" >&2; exit 1; }
+
+staged=$(mktemp -d)
+trap 'rm -rf "$staged"' EXIT
+cp "$local_db" "$staged/mealprep.db"
+for suffix in -wal -shm; do
+  [ -f "$local_db$suffix" ] && cp "$local_db$suffix" "$staged/mealprep.db$suffix"
+done
+
+[ "$(sqlite3 "$staged/mealprep.db" 'pragma integrity_check;' 2>/dev/null)" = "ok" ] \
+  || { echo "android:db:push: $local_db is not a readable SQLite database" >&2; exit 1; }
+# Folded into the main file here rather than shipped as three: one file cannot
+# arrive half-applied, and the app opens a fresh WAL on its own.
+sqlite3 "$staged/mealprep.db" "pragma wal_checkpoint(truncate);" >/dev/null
+
+# sqlx::migrate! refuses a database whose migration state it cannot read, so a
+# file from outside this app is rejected here rather than at the app's next start.
+sqlite3 "$staged/mealprep.db" "select 1 from _sqlx_migrations limit 1;" >/dev/null 2>&1 \
+  || { echo "android:db:push: $local_db has no _sqlx_migrations table; the app would refuse it" >&2; exit 1; }
+
+package="com.mertan.mealprep.debug"
+remote="/data/data/$package/mealprep.db"
+adb="${ANDROID_HOME:-$HOME/Android/Sdk}/platform-tools/adb"
+[ -x "$adb" ] || adb=$(command -v adb) || { echo "android:db:push: no adb found" >&2; exit 1; }
+
+if ! "$adb" shell run-as "$package" true 2>/dev/null; then
+  echo "android:db:push: cannot reach $package (not installed, or not a debug build)." >&2
+  exit 1
+fi
+
+# The app holds the database open: overwriting underneath a live process is how a
+# WAL and its main file stop agreeing.
+"$adb" shell am force-stop "$package"
+
+if "$adb" shell run-as "$package" test -f "$remote" 2>/dev/null; then
+  stamp=$(date +%Y%m%d-%H%M%S)
+  mkdir -p backups
+  "$adb" exec-out run-as "$package" cat "$remote" > "backups/mealprep-replaced-$stamp.db"
+  echo "existing database saved to backups/mealprep-replaced-$stamp.db"
+fi
+
+"$adb" push "$staged/mealprep.db" /data/local/tmp/mealprep-push.db >/dev/null
+"$adb" shell run-as "$package" cp /data/local/tmp/mealprep-push.db "$remote"
+"$adb" shell rm -f /data/local/tmp/mealprep-push.db
+
+# Sidecars of the database being replaced describe the old file; left behind they
+# are replayed over the new one at open.
+"$adb" shell run-as "$package" rm -f "$remote-wal" "$remote-shm"
+
+echo "pushed $local_db to $package"
+'''
 
 [tasks.autocommit]
 description = "Review a Claude-written commit message in the editor, then commit"
