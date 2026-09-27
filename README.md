@@ -25,6 +25,7 @@ docs/                  the specification, the architecture and the standards
 | [`docs/architecture.md`](docs/architecture.md) | how the pieces fit and why |
 | [`docs/code-standards.md`](docs/code-standards.md) | how the code is written |
 | [`docs/todo.md`](docs/todo.md) | deferred decisions, not to be implemented unless asked |
+| [`docs/demo-data.md`](docs/demo-data.md) | the demo database, and which data shows which feature |
 
 ## Prerequisites
 
@@ -62,8 +63,9 @@ bun run check                 # svelte-check
 `mise.toml` wraps these: `mise run test` runs both suites, `mise run lint` and
 `mise run format` cover Rust, `mise run check` typechecks the frontend, and
 `mise run android:dev` builds and installs on a running emulator. `mise tasks` lists them
-all. `mise run autocommit` drafts a commit message from the staged diff and opens it in
-the editor for review.
+all. `mise run demo:seed` rebuilds `demo/mealprep-demo.db`, a dataset that shows every
+feature (see [`docs/demo-data.md`](docs/demo-data.md)). `mise run autocommit` drafts a
+commit message from the staged diff and opens it in the editor for review.
 
 ## Scope of the port
 

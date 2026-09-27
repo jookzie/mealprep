@@ -262,6 +262,10 @@ database a running process holds open is how a WAL and its main file stop agreei
 Both reach the debug install only — `run-as` refuses a release build, and the suffix gives
 the two separate databases. The release install's data has no route off the device.
 
+`mise run demo:seed` rebuilds `demo/mealprep-demo.db` through
+`crates/sqlite/examples/seed_demo.rs`, writing through the services so the rules apply to it;
+`docs/demo-data.md` says which data shows which feature.
+
 ## Future: a cloud database
 Add a crate (e.g. `crates/postgres`) implementing the `core::store` traits with sqlx's
 Postgres driver, then change `AppState`. Nothing in `core` or the frontend changes.
