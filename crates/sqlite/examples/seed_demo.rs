@@ -6,9 +6,10 @@
 //! deletion — are reached the same way the user would reach them: by creating the entity,
 //! using it, then deleting it.
 //!
-//! The calendar and the weigh-ins are laid out around a reference day, today by default,
-//! because the calendar opens on the current week and the weight trend reads "now".
-//! `docs/demo-data.md` maps each feature to where the data shows it.
+//! The calendar, the weigh-ins, the tape measurements and the imported nights are laid out
+//! around a reference day, today by default, because the calendar opens on the current week
+//! and every insight is read as of "now". `docs/demo-data.md` maps each feature to where the
+//! data shows it.
 //!
 //! Usage: `cargo run -p mealprep-sqlite --example seed_demo -- <out.db> [YYYY-MM-DD]`
 
@@ -17,15 +18,16 @@ use std::{env, fs, path::PathBuf, process};
 use mealprep_core::{
     Entity, Error, Result,
     domain::{
-        CatalogueEntry, CategoryDraft, CategoryScope, DayPlanDraft, DayPlanItem, Macros, MealDraft,
-        Nutrients, ProductDraft, Serving, Unit, parse_iso_date,
+        ActivityDay, CatalogueEntry, CategoryDraft, CategoryScope, DayPlanDraft, DayPlanItem,
+        HealthImport, Macros, MealDraft, MeasurementKind, Nutrients, ProductDraft, Reading,
+        Serving, SleepSession, SleepStage, SleepStageKind, Unit, parse_iso_date,
     },
     service::Mealprep,
     store::Catalogue,
 };
 use mealprep_sqlite::SqliteStore;
 use sqlx::{Connection, SqliteConnection};
-use time::{Date, Duration, OffsetDateTime, Weekday};
+use time::{Date, Duration, OffsetDateTime, Weekday, macros::offset};
 use uuid::Uuid;
 
 /// The seed needs no catalogue, but `Mealprep` is generic over one. Imports are
@@ -111,6 +113,8 @@ async fn seed(demo: &Demo, today: Date) -> Result<()> {
     let plans = day_plans(demo, &products, &categories, &meals).await?;
     calendar(demo, &plans, today).await?;
     weight(demo, today).await?;
+    measurements(demo, today).await?;
+    health(demo, today).await?;
     demo.set_targets(macros(2000.0, 65.0, 140.0, 220.0)).await?;
 
     // Deleted last, once something refers to each, so every join has a miss to render.
@@ -575,6 +579,9 @@ async fn day_plans(demo: &Demo, p: &Products, c: &Categories, m: &Meals) -> Resu
         )
         .await?,
         // Every product priced and nothing removed: the one plan whose cost is complete.
+        // The scoop of whey is what takes it to the protein target while leaving it under
+        // the energy one, so the two are separate habits to the recovery comparison rather
+        // than the same days under two names.
         rest: plan(
             "Rest day",
             Some(c.rest),
@@ -582,6 +589,7 @@ async fn day_plans(demo: &Demo, p: &Products, c: &Categories, m: &Meals) -> Resu
                 meal(m.eggs_on_toast),
                 meal(m.chicken_rice),
                 product(p.apple, 150.0),
+                product(p.whey, 40.0),
                 meal(m.salmon_dinner),
             ],
         )
@@ -624,15 +632,54 @@ async fn day_plans(demo: &Demo, p: &Products, c: &Categories, m: &Meals) -> Resu
     })
 }
 
+// the shape of the history
+
+/// How far back everything but the calendar reaches, in days.
+///
+/// Thirteen weeks, so that every window the insights read over is full rather than half
+/// collected: three weeks for the energy balance, four for sleep regularity, eight for a
+/// recovery baseline and thirteen for the behaviour comparisons.
+const HISTORY_DAYS: i64 = 91;
+
+/// Ten days away from home, in days back from the reference day: no scale and no strap, so
+/// the weight graph, the sleep chart and both recovery series carry the same gap.
+const AWAY_FROM: i64 = 43;
+const AWAY_TO: i64 = 52;
+
+fn away(back: i64) -> bool {
+    (AWAY_FROM..=AWAY_TO).contains(&back)
+}
+
+/// The days the calendar plans a training day, which are the days the watch records a
+/// workout: the two have to agree, or the recovery comparison is reading noise.
+fn trains(date: Date) -> bool {
+    matches!(
+        date.weekday(),
+        Weekday::Monday | Weekday::Wednesday | Weekday::Friday
+    )
+}
+
+/// Rounded the way a figure of this kind is recorded: a tape and a scale to a tenth.
+fn tenth(value: f64) -> f64 {
+    (value * 10.0).round() / 10.0
+}
+
 // calendar
 
-/// Plans the six weeks from two weeks back, so both the current four-week view and the
-/// one before it have something in them.
+/// Plans thirteen weeks back and three ahead.
+///
+/// Four weeks would fill the view, but the energy balance reads the last three weeks of
+/// plans and the recovery comparison the last thirteen, so a shorter history would leave
+/// both screens saying there is not enough yet.
+const WEEKS_BACK: i64 = 13;
+const WEEKS_AHEAD: i64 = 3;
+
 async fn calendar(demo: &Demo, plans: &Plans, today: Date) -> Result<()> {
     let monday = today - Duration::days(i64::from(today.weekday().number_days_from_monday()));
-    let first = monday - Duration::weeks(2);
+    let first = monday - Duration::weeks(WEEKS_BACK);
+    let last_week = WEEKS_BACK + WEEKS_AHEAD;
 
-    for offset in 0..42 {
+    for offset in 0..(last_week + 1) * 7 {
         let date = first + Duration::days(offset);
         let week = offset / 7;
         let plan = match date.weekday() {
@@ -644,7 +691,7 @@ async fn calendar(demo: &Demo, plans: &Plans, today: Date) -> Result<()> {
             Weekday::Sunday => Some(plans.lazy_sunday),
         };
         // The last week is only half planned, as a week ahead usually is.
-        if week == 5 && offset % 7 >= 3 {
+        if week == last_week && offset % 7 >= 3 {
             continue;
         }
         if let Some(plan) = plan {
@@ -663,25 +710,316 @@ async fn calendar(demo: &Demo, plans: &Plans, today: Date) -> Result<()> {
 
 // weight
 
-/// Ten weeks of weigh-ins ending today, losing about 0.4 kg a week under daily noise, with
-/// the gaps a real log has: skipped days, and a week and a half away without a scale.
+/// Thirteen weeks of weigh-ins ending today, losing about 0.4 kg a week under daily noise,
+/// with the gaps a real log has: skipped days, and the ten days away without a scale.
 async fn weight(demo: &Demo, today: Date) -> Result<()> {
-    const DAYS: i64 = 70;
-    for back in (0..DAYS).rev() {
-        let day = DAYS - 1 - back;
-        let away = (38..48).contains(&day);
+    for back in (0..HISTORY_DAYS).rev() {
+        let day = HISTORY_DAYS - 1 - back;
         let skipped = day % 5 == 3 || day % 11 == 7;
-        if away || (skipped && back != 0) {
+        if away(back) || (skipped && back != 0) {
             continue;
         }
         // Deterministic, so two seeds of the same day give the same chart.
         let noise = 0.45 * (day as f64 * 1.7).sin() + 0.25 * (day as f64 * 0.63).cos();
         let kilograms = 84.0 - 0.057 * day as f64 + noise;
-        let kilograms = (kilograms * 10.0).round() / 10.0;
-        demo.set_weight_entry(today - Duration::days(back), kilograms)
+        demo.set_weight_entry(today - Duration::days(back), tenth(kilograms))
             .await?;
     }
     Ok(())
+}
+
+// measurements
+
+/// A waist every week and the other kinds now and then, over the same thirteen weeks.
+///
+/// The waist comes down about 1.5 cm in four weeks against 1.6 kg of trend, which is the
+/// one pairing the app names. Height is measured once, because it is only there for the
+/// ratio; the neck once and long ago, which is a series too short to compare; and the arm
+/// never, so the picker has a kind with nothing behind it.
+async fn measurements(demo: &Demo, today: Date) -> Result<()> {
+    let record = async |back: i64, kind: MeasurementKind, value: f64| {
+        demo.set_measurement(today - Duration::days(back), kind, tenth(value))
+            .await?;
+        Ok::<_, Error>(())
+    };
+    // Days from the start of the history, which every figure is a function of.
+    let day = |back: i64| (HISTORY_DAYS - 1 - back) as f64;
+
+    for back in (0..HISTORY_DAYS).step_by(7) {
+        let day = day(back);
+        record(
+            back,
+            MeasurementKind::Waist,
+            91.4 - 0.055 * day + 0.35 * (day * 0.5).sin(),
+        )
+        .await?;
+        if back % 14 == 0 {
+            record(back, MeasurementKind::BodyFat, 21.8 - 0.035 * day).await?;
+        }
+        if back % 28 == 0 {
+            record(back, MeasurementKind::Hips, 99.6 - 0.022 * day).await?;
+            // The chest and the thigh hold while the waist comes down, which is why more
+            // than one place is worth measuring.
+            record(
+                back,
+                MeasurementKind::Chest,
+                102.4 + 0.2 * (day * 0.4).sin(),
+            )
+            .await?;
+            record(back, MeasurementKind::Thigh, 58.8 - 0.006 * day).await?;
+        }
+    }
+    record(84, MeasurementKind::Height, 178.0).await?;
+    record(56, MeasurementKind::Neck, 39.6).await?;
+    Ok(())
+}
+
+// health
+
+/// The strap arrived ten weeks in, in days back. Before that the nights came from a phone,
+/// which knows when one started and ended and nothing in between.
+const PHONE_ONLY_FROM: i64 = 70;
+
+/// Two nights the strap was flat. The phone still counted the day's activity.
+const FLAT_BATTERY: [i64; 2] = [17, 34];
+
+/// Two days nothing counted the activity, which is not the same as a day of none: the
+/// morning after each is left out of the workout comparison rather than counted as a rest.
+const NO_ACTIVITY: [i64; 2] = [5, 26];
+
+/// Thirteen weeks of nights, morning readings and daily activity, handed to `import_health`
+/// as the raw records a sync arrives with, so the stored rows are what the rules summarised
+/// rather than what this file thinks they should be.
+///
+/// The history is shaped the way a mostly-worn device records: a phone-only start, a strap
+/// after it, two flat nights, the ten days away, three days ill three weeks back, and a hard
+/// last week — which is why today's averages sit outside the normal range rather than in the
+/// middle of it, where there would be nothing to read.
+async fn health(demo: &Demo, today: Date) -> Result<()> {
+    let first = today - Duration::days(HISTORY_DAYS - 1);
+    let mut import = HealthImport::default();
+    for back in (0..HISTORY_DAYS).rev() {
+        Morning::new(today - Duration::days(back), back).record(&mut import);
+    }
+    // A morning sync on the reference day, so the Body screen reads as synced this morning
+    // rather than at whatever hour the file happened to be built.
+    demo.import_health(first, today, import, at(today, 7 * 60 + 10))
+        .await?;
+    Ok(())
+}
+
+/// One morning of the health history, and what was recording it.
+///
+/// Every figure is a function of `day`, so two seeds of the same reference day give the same
+/// nights and the same charts.
+struct Morning {
+    date: Date,
+    /// Days from the start of the history.
+    day: f64,
+    /// The strap was on overnight, which is what supplies the stages and the two markers.
+    strap: bool,
+    /// A night was recorded at all.
+    slept: bool,
+    /// A workout was recorded on this day.
+    trained: bool,
+    /// The day before this morning was a training day, which is what the night responds to.
+    trained_before: bool,
+    /// The day's activity was counted.
+    activity: bool,
+    /// How hard the last week and the three days ill push the markers.
+    strain: f64,
+    asleep_minutes: f64,
+    /// Minutes from this morning's midnight, negative for the usual bedtime the evening
+    /// before.
+    bed_minute: f64,
+    /// Two readings of each marker rather than one, the first stamped the evening before.
+    split_readings: bool,
+    /// A second app recorded this night too, shorter than the strap did.
+    duplicated: bool,
+    /// An afternoon nap on the day this morning opened.
+    napped: bool,
+}
+
+impl Morning {
+    fn new(date: Date, back: i64) -> Self {
+        let day = (HISTORY_DAYS - 1 - back) as f64;
+        let flat = FLAT_BATTERY.contains(&back);
+        Self {
+            date,
+            day,
+            strap: !away(back) && !flat && back < PHONE_ONLY_FROM,
+            slept: !away(back) && !flat,
+            trained: trains(date),
+            trained_before: trains(date - Duration::days(1)),
+            activity: !away(back) && !NO_ACTIVITY.contains(&back),
+            strain: strain(back),
+            asleep_minutes: 428.0 + 52.0 * (day * 1.31).sin() + 23.0 * (day * 0.47).cos(),
+            // A different frequency from the duration's, so that going to bed early does not
+            // also mean sleeping longer: the two habits are compared separately.
+            bed_minute: -42.0 + 38.0 * (day * 0.83).sin() + 17.0 * (day * 2.17).cos(),
+            split_readings: back % 17 == 3,
+            duplicated: back == 12,
+            napped: date.weekday() == Weekday::Sunday && back % 2 == 1,
+        }
+    }
+
+    fn record(&self, import: &mut HealthImport) {
+        if self.slept {
+            import.sleep.push(self.night());
+            // The same night from a second app, shorter: the longer session is the night,
+            // and adding the two would sleep it twice.
+            if self.duplicated {
+                let night = self.night();
+                import.sleep.push(SleepSession {
+                    start: night.start + Duration::minutes(25),
+                    end: night.end - Duration::minutes(15),
+                    stages: Vec::new(),
+                });
+            }
+            // A nap is its own session on the same morning, and is not part of the night.
+            if self.napped {
+                import.sleep.push(SleepSession {
+                    start: at(self.date, 14 * 60),
+                    end: at(self.date, 14 * 60 + 50),
+                    stages: Vec::new(),
+                });
+            }
+        }
+        if self.strap {
+            self.readings(import);
+        }
+        if self.activity {
+            let workout = if self.trained { 430.0 } else { 0.0 };
+            let active = 300.0 + 55.0 * (self.day * 0.55).sin() + workout;
+            import.activity.push(ActivityDay {
+                date: self.date,
+                active_kcal: Some(active.round()),
+                // A wearable's own total, which reads a couple of hundred above what the
+                // weight trend implies, as a wrist estimate does.
+                total_kcal: Some((1910.0 + active + 40.0 * (self.day * 0.33).cos()).round()),
+                exercise_minutes: self
+                    .trained
+                    .then(|| (52.0 + 18.0 * (self.day * 0.9).sin().abs()).round()),
+            });
+        }
+    }
+
+    /// The night as the source recorded it: when it started, when it ended, and the stages in
+    /// between when there was something to record them.
+    fn night(&self) -> SleepSession {
+        let start = at(self.date, self.bed_minute.round() as i32);
+        let in_bed = self.asleep_minutes + self.awake_minutes();
+        SleepSession {
+            start,
+            end: start + Duration::minutes(in_bed.round() as i64),
+            stages: self.stages(start),
+        }
+    }
+
+    /// Time awake in the night, which only the strap knows: a phone reports the bounds, and
+    /// all of it counts as sleep.
+    fn awake_minutes(&self) -> f64 {
+        if self.strap {
+            21.0 + 9.0 * (self.day * 1.9).sin()
+        } else {
+            0.0
+        }
+    }
+
+    /// Light, deep, REM and one waking, laid end to end across the night.
+    fn stages(&self, start: OffsetDateTime) -> Vec<SleepStage> {
+        if !self.strap {
+            return Vec::new();
+        }
+        let deep = self.asleep_minutes * (0.19 + 0.03 * (self.day * 0.7).sin());
+        let rem = self.asleep_minutes * (0.21 + 0.04 * (self.day * 1.1).cos());
+        let light = self.asleep_minutes - deep - rem;
+        let spans = [
+            (SleepStageKind::Light, light / 2.0),
+            (SleepStageKind::Deep, deep),
+            (SleepStageKind::Awake, self.awake_minutes()),
+            (SleepStageKind::Rem, rem),
+            (SleepStageKind::Light, light / 2.0),
+        ];
+
+        let mut at = start;
+        spans
+            .into_iter()
+            .map(|(kind, minutes)| {
+                let stage = SleepStage {
+                    start: at,
+                    end: at + Duration::seconds((minutes * 60.0).round() as i64),
+                    kind,
+                };
+                at = stage.end;
+                stage
+            })
+            .collect()
+    }
+
+    /// The three overnight readings.
+    ///
+    /// A night of seven hours reads better the next morning and the day after a workout
+    /// reads worse, in both markers and in opposite directions, because that is the
+    /// association the recovery screen is there to find. Bedtime is deliberately not one of
+    /// them: a habit that turns out to make no clear difference is a state to show too.
+    fn readings(&self, import: &mut HealthImport) {
+        let rested = f64::from(self.asleep_minutes >= 420.0);
+        let trained = f64::from(self.trained_before);
+        let hrv = 63.0 + 5.4 * rested - 5.2 * trained - 7.0 * self.strain
+            + 3.1 * (self.day * 1.13).sin()
+            + 1.7 * (self.day * 0.61).cos();
+        let rhr = 51.0 - 1.4 * rested
+            + 1.3 * trained
+            + 3.4 * self.strain
+            + 1.1 * (self.day * 0.91).sin()
+            + 0.7 * (self.day * 1.77).cos();
+        let respiratory = 14.3 + 0.9 * self.strain + 0.4 * (self.day * 1.4).sin();
+
+        for (readings, value, spread) in [
+            (&mut import.heart_rate_variability, hrv, 2.5),
+            (&mut import.resting_heart_rate, rhr, 0.8),
+            (&mut import.respiratory_rate, respiratory, 0.3),
+        ] {
+            if self.split_readings {
+                // One stamped at 23:40 and one at 05:10: both belong to this morning, and
+                // the row keeps their mean rather than whichever synced last.
+                readings.push(Reading {
+                    at: at(self.date, -20),
+                    value: value - spread,
+                });
+                readings.push(Reading {
+                    at: at(self.date, 5 * 60 + 10),
+                    value: value + spread,
+                });
+            } else {
+                readings.push(Reading {
+                    at: at(self.date, 4 * 60 + 40),
+                    value,
+                });
+            }
+        }
+    }
+}
+
+/// How much load the markers are carrying on a given morning.
+///
+/// A hard last week, which is what the current verdict is read from, and three days ill
+/// three weeks back, which is the spike in the middle of both charts.
+fn strain(back: i64) -> f64 {
+    if (1..=8).contains(&back) {
+        1.0
+    } else if (21..=23).contains(&back) {
+        1.6
+    } else {
+        0.0
+    }
+}
+
+/// A moment on the given date's own clock, in the one offset the demo lives in. Minutes may
+/// be negative, which is the evening before: -20 is 23:40.
+fn at(date: Date, minute: i32) -> OffsetDateTime {
+    date.midnight().assume_offset(offset!(+2)) + Duration::minutes(i64::from(minute))
 }
 
 fn internal(reason: String) -> Error {
