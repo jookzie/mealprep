@@ -24,3 +24,5 @@ vite.config.ts.timestamp-*
 *.db
 *.db-shm
 *.db-wal
+# except the demo dataset, which is checked in: see docs/demo-data.md
+!/demo/mealprep-demo.db

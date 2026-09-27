@@ -233,6 +233,21 @@ fi
 echo "pushed $local_db to $package"
 '''
 
+[tasks."demo:seed"]
+description = "Rebuild demo/mealprep-demo.db, the dataset that shows every feature"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Optional YYYY-MM-DD to lay the calendar and the weigh-ins around; today otherwise.
+out="demo/mealprep-demo.db"
+mkdir -p demo
+rm -f "$out" "$out-wal" "$out-shm"
+cargo run --quiet -p mealprep-sqlite --example seed_demo -- "$out" "$@"
+echo "load it with: mise run android:db:push -- $out"
+'''
+
 [tasks.autocommit]
 description = "Review a Claude-written commit message in the editor, then commit"
 dir = "{{config_root}}"
