@@ -3,9 +3,9 @@
 use mealprep_core::{
     Entity, Error, Result,
     domain::{
-        CatalogueEntry, CategoryDraft, CategoryScope, DayPlanDraft, DayPlanItem, EntrySource,
-        Macros, MealDraft, Nutrients, ProductDraft, ResolvedDayPlanItem, Serving, Unit,
-        parse_iso_date,
+        ActivityDay, CatalogueEntry, CategoryDraft, CategoryScope, DayPlanDraft, DayPlanItem,
+        EntrySource, HealthImport, Macros, MealDraft, MeasurementKind, Nutrients, ProductDraft,
+        Reading, ResolvedDayPlanItem, Serving, SleepSession, Unit, parse_iso_date,
     },
     service::Mealprep,
     store::Catalogue,
@@ -538,6 +538,152 @@ async fn weigh_ins_replace_by_date_and_smooth_into_a_trend() {
 
     mealprep.delete_weight_entry(tuesday).await.unwrap();
     assert_eq!(mealprep.list_weight_entries().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn measurements_replace_by_date_and_kind() {
+    let mealprep = mealprep(FixedCatalogue::default()).await;
+    let monday = parse_iso_date("2026-09-07").unwrap();
+
+    mealprep
+        .set_measurement(monday, MeasurementKind::Waist, 90.0)
+        .await
+        .unwrap();
+    mealprep
+        .set_measurement(monday, MeasurementKind::Height, 180.0)
+        .await
+        .unwrap();
+    // The same kind on the same date corrects the figure rather than adding one.
+    mealprep
+        .set_measurement(monday, MeasurementKind::Waist, 88.5)
+        .await
+        .unwrap();
+
+    let measurements = mealprep.list_measurements().await.unwrap();
+    assert_eq!(measurements.len(), 2);
+    let waist = measurements
+        .iter()
+        .find(|measurement| measurement.kind == MeasurementKind::Waist)
+        .unwrap();
+    assert_eq!(waist.value, 88.5);
+
+    assert!(matches!(
+        mealprep
+            .set_measurement(monday, MeasurementKind::BodyFat, 0.2)
+            .await,
+        Err(Error::Invalid { .. })
+    ));
+    assert!(matches!(
+        mealprep
+            .delete_measurement(monday, MeasurementKind::Hips)
+            .await,
+        Err(Error::NotFound { .. })
+    ));
+
+    mealprep
+        .delete_measurement(monday, MeasurementKind::Waist)
+        .await
+        .unwrap();
+    assert_eq!(mealprep.list_measurements().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_health_import_replaces_the_days_it_covers_and_nothing_else() {
+    let mealprep = mealprep(FixedCatalogue::default()).await;
+    let today = parse_iso_date("2026-09-10").unwrap();
+    let now = time::OffsetDateTime::UNIX_EPOCH;
+
+    // Nothing imported yet: the first import reaches back a year.
+    let start = mealprep.health_import_start(today).await.unwrap();
+    assert_eq!(start, parse_iso_date("2025-09-10").unwrap());
+
+    let first = HealthImport {
+        sleep: vec![SleepSession {
+            start: time::macros::datetime!(2026-09-01 23:00 +02:00),
+            end: time::macros::datetime!(2026-09-02 07:00 +02:00),
+            stages: Vec::new(),
+        }],
+        heart_rate_variability: vec![Reading {
+            at: time::macros::datetime!(2026-09-09 05:00 +02:00),
+            value: 60.0,
+        }],
+        activity: vec![ActivityDay {
+            date: parse_iso_date("2026-09-08").unwrap(),
+            active_kcal: Some(400.0),
+            total_kcal: Some(2600.0),
+            exercise_minutes: Some(30.0),
+        }],
+        ..HealthImport::default()
+    };
+    mealprep
+        .import_health(start, today, first, now)
+        .await
+        .unwrap();
+
+    let days = mealprep.list_health_days().await.unwrap();
+    assert_eq!(days.len(), 3);
+    let night = days[0].sleep.expect("the night of the 1st");
+    assert_eq!((night.bed_minute, night.wake_minute), (-60, 420));
+
+    // A later import re-reads only the last few days, and a day the source no longer has
+    // anything for goes, while older days stay.
+    let start = mealprep.health_import_start(today).await.unwrap();
+    assert_eq!(start, parse_iso_date("2026-09-07").unwrap());
+    mealprep
+        .import_health(start, today, HealthImport::default(), now)
+        .await
+        .unwrap();
+
+    let days = mealprep.list_health_days().await.unwrap();
+    assert_eq!(days.len(), 1);
+    assert_eq!(days[0].date, parse_iso_date("2026-09-02").unwrap());
+    let sync = mealprep.last_health_sync().await.unwrap().unwrap();
+    assert_eq!(sync.through, today);
+
+    // The derived reads run over the stored days.
+    let sleep = mealprep.sleep_summary(today).await.unwrap();
+    assert_eq!(sleep.nights.len(), 1);
+    let recovery = mealprep.recovery(today).await.unwrap();
+    assert_eq!(recovery.hrv, None);
+}
+
+#[tokio::test]
+async fn energy_balance_reads_the_plan_and_the_weight_trend() {
+    let mealprep = mealprep(FixedCatalogue::default()).await;
+    let product = mealprep
+        .create_product(product_draft("Oats", 400.0, None))
+        .await
+        .unwrap();
+    let plan = mealprep
+        .create_day_plan(DayPlanDraft {
+            label: "Steady".to_owned(),
+            category_id: None,
+            items: vec![DayPlanItem::Product {
+                product_id: product.id,
+                amount: 500.0,
+            }],
+        })
+        .await
+        .unwrap();
+
+    let today = parse_iso_date("2026-09-30").unwrap();
+    for offset in 1..=21 {
+        let date = today - time::Duration::days(offset);
+        mealprep.assign_calendar_day(date, plan.id).await.unwrap();
+    }
+    for offset in 0..=30 {
+        let date = today - time::Duration::days(offset);
+        mealprep.set_weight_entry(date, 80.0).await.unwrap();
+    }
+
+    let balance = mealprep.energy_balance(today).await.unwrap();
+
+    assert_eq!(balance.planned_days, 21);
+    assert_eq!(balance.planned_kcal, Some(2000.0));
+    // A flat trend means everything planned was burned.
+    let expenditure = balance.expenditure_kcal.unwrap();
+    assert!((expenditure - 2000.0).abs() < 1e-6, "was {expenditure}");
+    assert_eq!(balance.measured_kcal, None);
 }
 
 #[tokio::test]

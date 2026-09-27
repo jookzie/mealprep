@@ -1,11 +1,13 @@
+use std::collections::{BTreeMap, HashMap};
+
 use time::Date;
 use uuid::Uuid;
 
 use super::Mealprep;
 use crate::{
     Entity, Error, Result,
-    domain::CalendarDay,
-    store::{CalendarStore, DayPlanStore},
+    domain::{CalendarDay, Macros},
+    store::{CalendarStore, CategoryStore, DayPlanStore, MealStore, ProductStore},
 };
 
 /// The longest range a calendar read may span; longer is an export, not a view.
@@ -50,5 +52,32 @@ where
     pub async fn unassign_calendar_day(&self, date: Date) -> Result<()> {
         self.store.unassign_calendar_day(date).await?;
         Ok(())
+    }
+}
+
+impl<S, C> Mealprep<S, C>
+where
+    S: CalendarStore + CategoryStore + DayPlanStore + MealStore + ProductStore,
+{
+    /// The planned macros of every date from `from` to `to` that has a plan.
+    ///
+    /// A date whose plan has been deleted is left out, as the calendar reads it as
+    /// unplanned: its macros are unknowable, and counting them as zero would read as a fast.
+    pub(super) async fn planned_macros(
+        &self,
+        from: Date,
+        to: Date,
+    ) -> Result<BTreeMap<Date, Macros>> {
+        let days = self.list_calendar_days(from, to).await?;
+        let plans: HashMap<Uuid, Macros> = self
+            .list_day_plans()
+            .await?
+            .into_iter()
+            .map(|plan| (plan.id, plan.macros))
+            .collect();
+        Ok(days
+            .into_iter()
+            .filter_map(|day| Some((day.date, *plans.get(&day.day_plan_id)?)))
+            .collect())
     }
 }

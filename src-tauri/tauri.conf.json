@@ -25,7 +25,8 @@
     "active": true,
     "targets": "all",
     "android": {
-      "debugApplicationIdSuffix": ".debug"
+      "debugApplicationIdSuffix": ".debug",
+      "minSdkVersion": 26
     },
     "icon": [
       "icons/32x32.png",

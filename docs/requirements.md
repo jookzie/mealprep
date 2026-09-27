@@ -18,12 +18,14 @@ protein and carbohydrates — and see what the plan costs.
 Mealprep is a single application that runs entirely on the user's device: a webview frontend,
 the business rules and the database in one process, with no server and no network service.
 It covers configuring products, composing meals from them, grouping meals and products into
-day plans, assigning day plans to calendar days, recording body weight, and reporting
-nutrients and cost against targets. It does not cover shopping lists, recipes with
+day plans, assigning day plans to calendar days, recording body weight and measurements,
+reading recovery and sleep from Health Connect, and reporting nutrients, cost and energy
+balance against targets. It does not cover shopping lists, recipes with
 instructions, multiple users or sharing.
 
 Cost tracking was excluded by the predecessor and is now in scope (§4.6). Categories for
-meals and day plans are new (§4.5), as is weight tracking (§4.10).
+meals and day plans are new (§4.5), as are weight tracking (§4.10), body measurements
+(§4.12), the Health Connect import (§4.13) and the insights drawn from them (§4.14).
 
 ### 1.3 Document conventions
 Requirements are identified as `XX-n` (`PR-1`, `ML-2`) and are binding. Priority is stated
@@ -72,6 +74,8 @@ carried over. See `docs/architecture.md` for the component diagram.
 - Assign day plans to calendar days.
 - Set daily macro targets and see planned nutrients and cost against them.
 - Record body weight and read its smoothed trend and rate of change.
+- Record body measurements and read the waist-to-height ratio and four-week changes.
+- Import sleep, recovery and activity from Health Connect, and read them against the user's own baseline, the plan and the weight trend.
 
 ### 2.3 User classes and characteristics
 One class, the single user, who both configures products and plans meals. No roles, no
@@ -128,8 +132,13 @@ Nutrients are shown as the four macros, with the full nutrient set behind an exp
 | Day plan detail | `/day-plans/[dayPlanId]` | `DP-4`, `TG-2`, `TG-3`, `CO-2` |
 | Edit day plan | `/day-plans/[dayPlanId]/edit` | `DP-5`, `DP-6` |
 | Calendar | `/calendar` | `CL-1`–`CL-5`, `TG-2`, `TG-3` |
-| Targets | `/targets` | `TG-1`, `WT-6` — the macro targets, and the weight trend beside them |
+| Body | `/body` | The hub behind the fifth tab: one line per card for recovery, sleep, weight, measurements, energy balance and targets, and the one Health Connect row (`HC-1`, `HC-4`) |
+| Targets | `/targets` | `TG-1` |
 | Weight | `/weight` | `WT-1`–`WT-7` — quick log, the graph, and the weigh-in history |
+| Recovery | `/body/recovery` | `IN-1`–`IN-4` |
+| Sleep | `/body/sleep` | `IN-5` |
+| Measurements | `/body/measurements` | `BM-1`–`BM-5` |
+| Energy balance | `/body/energy` | `IN-6`, `IN-7` |
 
 Creating and editing are screens rather than dialogs, because every write replaces the whole
 entity and so has to start from a fresh read. Dialogs carry what is genuinely one decision:
@@ -159,17 +168,20 @@ Colour is never the only channel — every figure is also labelled, and the seri
 changes.
 
 ### 3.2 Hardware interfaces
-The device camera, on phones only, for barcode scanning (`SC-1`). Nothing else.
+The device camera, on phones only, for barcode scanning (`SC-1`). A wearable reaches the
+application only through Health Connect, never directly.
 
 ### 3.3 Software interfaces
 - **Open Food Facts REST API** — read-only, over rustls with webpki roots. Search by text and fetch by barcode, behind the `Catalogue` trait.
 - **SQLite** — a local file, reached only through `mealprep-sqlite`.
 - **Barcode scanner** — `tauri-plugin-barcode-scanner`, on Android and iOS only.
+- **Health Connect** — Android's on-device health store, read-only, through the `mealprep-health-connect` plugin. Every other platform reports it unsupported.
 
 ### 3.4 Communications interfaces
 Between the frontend and the rules there is no network protocol: the webview invokes Tauri
 commands over the IPC bridge, and arguments and results are JSON-serialised domain types.
-The only outbound traffic is HTTPS to the OFF API. The application listens on no port.
+The only outbound traffic is HTTPS to the OFF API; Health Connect is a local Android
+service, not a network one. The application listens on no port.
 
 ## 4. System features
 Features are ordered by the dependency between their domains: products come first, meals
@@ -292,6 +304,42 @@ it into a trend, draws it against the previous weigh-ins, and says which way it 
 - `WT-7` The graph shall scale to the data rather than to zero, and shall leave enough room below the lowest value that ordinary fluctuation cannot read as collapse.
 - `WT-8` The system shall refuse a figure outside the plausible human range, and shall otherwise have no opinion about the weight recorded — no goal, no judgement, no congratulation.
 
+### 4.12 Body measurements
+**Description and priority.** Tape measurements and body fat, of which waist carries the most
+evidence. Medium. New in this version.
+
+**Functional requirements.**
+- `BM-1` The system shall let the user record a waist, hips, chest, neck, arm, thigh, height (cm) or body fat (%) against a date, defaulting to today.
+- `BM-2` A date shall hold at most one value per kind; recording again replaces it. Delete is soft.
+- `BM-3` The system shall refuse a figure outside that kind's plausible range, as `WT-8` does.
+- `BM-4` The system shall show the waist-to-height ratio from the latest waist and height, read in the NICE NG246 bands, and nothing about BMI.
+- `BM-5` The system shall show how the waist and the weight trend moved over the same four weeks, and name the pattern only when it is clear.
+
+### 4.13 Health Connect import
+**Description and priority.** What a wearable records, on the device. Medium. New in this
+version.
+
+**Functional requirements.**
+- `HC-1` The system shall ask for Health Connect access only when the user chooses to connect, and shall read sleep, resting heart rate, HRV, respiratory rate, workouts and energy burned. It shall never write.
+- `HC-2` The system shall summarise what it reads into one row per morning, assigning a night and any reading taken from 18:00 onwards to the morning after, and using only the longest sleep session of a night.
+- `HC-3` Energy burned and exercise time shall be taken as Health Connect aggregates them per day, so that overlapping apps are not counted twice.
+- `HC-4` The system shall re-read Health Connect when the Body screen opens and the last import is at least an hour old, and on request. Each import replaces the days it covers and nothing else.
+- `HC-5` Every figure shall be optional: a source that does not write one leaves the insights that need it absent, never wrong.
+
+### 4.14 Insights
+**Description and priority.** The correlations recovery and nutrition apps have converged on,
+computed on the device. Medium. New in this version. The reasoning and sources are in
+`docs/research/2026-09-27-health-insights-ui-ux.md`.
+
+**Functional requirements.**
+- `IN-1` The system shall show HRV and resting heart rate as a 7-day average against the user's own normal range — the last 60 days' mean ± half a standard deviation — and withhold the range below 14 readings.
+- `IN-2` The system shall say in words whether the average is below, within or above the range, and never colour the verdict.
+- `IN-3` The system shall compare the marker on mornings with and without each of: 7 hours' sleep, an earlier bedtime than usual, a workout the day before, a plan over the energy target and a plan at the protein target the day before. It shall do so over 90 days, only with five mornings on each side, using HRV where there is enough and resting heart rate otherwise.
+- `IN-4` A difference under half a standard deviation shall read as no clear difference, and every comparison shall carry its counts and be called an association.
+- `IN-5` The system shall show sleep duration over the last week, and bedtime and wake-time variability over four weeks once there are 14 nights.
+- `IN-6` The system shall estimate expenditure over the last 21 days as planned intake minus the energy the weight trend stored, at 7,700 kcal per kilogram, only with 14 planned days and a trend covering the window.
+- `IN-7` The wearable's own energy figure shall be shown beside the estimate as a comparison, and the estimate shall say it assumes the plan was eaten.
+
 ### 4.11 Plausibility checks
 **Description and priority.** Catching a typo without refusing the save. Low. New in this
 version.
@@ -308,12 +356,14 @@ and every read crosses the IPC bridge, so a screen loads what it displays and no
 
 ### 5.2 Safety requirements
 None. The application gives no medical or dietary advice and enforces nothing, per `TG-3`
-and `PL-2`.
+and `PL-2`. The recovery and sleep screens describe patterns in the user's own data and say
+so (`IN-4`); they diagnose nothing.
 
 ### 5.3 Security requirements
 No authentication and no transport security for the application itself, because it listens on
 nothing and its data never leaves the device. The one outbound connection, to the OFF API, is
-HTTPS with webpki roots. Giving this application a network service, or synchronising its
+HTTPS with webpki roots. Health data is read from Health Connect with the user's permission,
+copied into the private database, and sent nowhere. Giving this application a network service, or synchronising its
 database anywhere, invalidates this section and requires it to be rewritten first.
 
 ### 5.4 Software quality attributes
@@ -324,8 +374,8 @@ database anywhere, invalidates this section and requires it to be rewritten firs
 
 ### 5.5 Logical database requirements
 The database stores products with their full nutrient set and optional price, categories,
-meals with their servings, day plans with their ordered items, calendar assignments, weigh-ins
-and targets. Nutrient and cost totals are never stored; they are derived on read. Every table
+meals with their servings, day plans with their ordered items, calendar assignments, weigh-ins,
+body measurements, imported health days with the time of the last import, and targets. Nutrient and cost totals are never stored; they are derived on read. Every table
 carries `created_at`, `updated_at` and `deleted_at`; a delete sets `deleted_at` and removes no
 row, and reads exclude soft-deleted rows. The schema is `crates/sqlite/migrations/`, applied
 on open — which closes the predecessor's TBD-12 and its hand-run `ALTER TABLE`s.
@@ -358,7 +408,8 @@ IEEE 830 §4.3.3.1 asks that every TBD record why it is open and what closes it.
 | --- | --- | --- | --- |
 | TBD-3 | User documentation | Premature while the app is used by the person building it | Someone else installs it |
 | TBD-13 | Whether a day plan's cost should be shown per day or per plan | Only the plan-level figure exists, and no view has needed the other | A view needs a per-day cost |
-| TBD-14 | Whether weight should be read against energy intake | The calendar knows what was planned per day, and the trend knows what happened; nothing joins them | Wanting to see the trend against the calories that produced it |
+
+TBD-14 (weight against energy intake) is closed by `IN-6`.
 
 The predecessor's TBD-12 (database schema) is closed: the schema is
 `crates/sqlite/migrations/0001_initial.sql`, applied by `sqlx::migrate!` on open.

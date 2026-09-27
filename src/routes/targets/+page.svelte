@@ -5,7 +5,6 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { formatKcal } from '$lib/domain/format';
 	import { impliedEnergyKcal } from '$lib/domain/macros';
-	import { formatKilograms, formatRate } from '$lib/domain/weight';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -39,7 +38,11 @@
 	}
 </script>
 
-<PageHeader title="Daily targets" subtitle="What plans and the calendar are measured against" />
+<PageHeader
+	title="Daily targets"
+	back="/body"
+	subtitle="What plans and the calendar are measured against"
+/>
 
 <form class="card stack" onsubmit={submit}>
 	<div class="grid-2">
@@ -66,23 +69,3 @@
 		>
 	</div>
 </form>
-
-<!--
-	Weight is the other thing plans are measured against, so it sits with the targets rather
-	than taking a sixth tab: both platforms' guidelines cap a bottom bar at five.
--->
-<a class="card list-link row spread" href="/weight">
-	<div>
-		<strong>Weight</strong>
-		<span class="muted small">
-			{#if data.weight.trend === undefined}
-				· nothing logged yet
-			{:else}
-				· trend {formatKilograms(data.weight.trend)}
-			{/if}
-		</span>
-	</div>
-	<span class="small muted">
-		{data.weight.ratePerWeek === undefined ? '' : formatRate(data.weight.ratePerWeek)} →
-	</span>
-</a>

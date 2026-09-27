@@ -18,12 +18,14 @@ tauri-build.workspace = true
 
 [dependencies]
 mealprep-core.workspace = true
+mealprep-health-connect.workspace = true
 mealprep-openfoodfacts.workspace = true
 mealprep-sqlite.workspace = true
 serde.workspace = true
 tauri.workspace = true
 tauri-plugin-opener.workspace = true
 thiserror.workspace = true
+time.workspace = true
 uuid.workspace = true
 
 # The scanner drives the camera through ML Kit on Android; there is none on desktop.

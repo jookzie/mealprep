@@ -1,8 +1,8 @@
 <script lang="ts">
 	import '../app.css';
+	import Activity from '@lucide/svelte/icons/activity';
 	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import Layers from '@lucide/svelte/icons/layers';
-	import Target from '@lucide/svelte/icons/target';
 	import Utensils from '@lucide/svelte/icons/utensils';
 	import Wheat from '@lucide/svelte/icons/wheat';
 	import { navigating, page } from '$app/state';
@@ -12,19 +12,23 @@
 	let { children } = $props();
 
 	/*
-	 * Plan (calendar, day plans) before Library (meals, products), with targets last as
-	 * configuration rather than content. On a phone the sidebar becomes a bottom bar.
+	 * Plan (calendar, day plans) before Library (meals, products), with Body last: the
+	 * targets, the weight and the health data everything else is measured against. Five
+	 * tabs is the most either platform's guidelines allow, so Body is a hub rather than
+	 * three more tabs, and the screens behind it still light it up.
 	 */
 	const sections = [
-		{ href: '/calendar', label: 'Calendar', icon: CalendarDays },
-		{ href: '/day-plans', label: 'Day plans', icon: Layers },
-		{ href: '/meals', label: 'Meals', icon: Utensils },
-		{ href: '/products', label: 'Products', icon: Wheat },
-		{ href: '/targets', label: 'Targets', icon: Target },
+		{ href: '/calendar', label: 'Calendar', icon: CalendarDays, also: [] },
+		{ href: '/day-plans', label: 'Day plans', icon: Layers, also: [] },
+		{ href: '/meals', label: 'Meals', icon: Utensils, also: [] },
+		{ href: '/products', label: 'Products', icon: Wheat, also: [] },
+		{ href: '/body', label: 'Body', icon: Activity, also: ['/targets', '/weight'] },
 	];
 
-	function isActive(href: string): boolean {
-		return page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
+	function isActive(section: { href: string; also: string[] }): boolean {
+		return [section.href, ...section.also].some(
+			(href) => page.url.pathname === href || page.url.pathname.startsWith(`${href}/`),
+		);
 	}
 </script>
 
@@ -38,7 +42,7 @@
 
 <nav class="tabs" aria-label="Sections">
 	{#each sections as section (section.href)}
-		<a href={section.href} aria-current={isActive(section.href) ? 'page' : undefined}>
+		<a href={section.href} aria-current={isActive(section) ? 'page' : undefined}>
 			<section.icon size={22} aria-hidden="true" />
 			<span>{section.label}</span>
 		</a>

@@ -33,7 +33,7 @@
 	}
 </script>
 
-<PageHeader title="Weight" subtitle="Weigh in daily; read the trend, not the scale" />
+<PageHeader title="Weight" back="/body" subtitle="Weigh in daily; read the trend, not the scale" />
 
 <form class="card stack" onsubmit={submit}>
 	<div class="grid-2">

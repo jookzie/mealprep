@@ -160,9 +160,117 @@ export type WeightSeries = {
 	ratePerWeek?: number;
 };
 
+export type MeasurementKind =
+	| 'waist'
+	| 'hips'
+	| 'chest'
+	| 'neck'
+	| 'arm'
+	| 'thigh'
+	| 'height'
+	| 'body-fat';
+
+/** One measurement of one kind; a date holds at most one per kind. */
+export type Measurement = {
+	date: string;
+	kind: MeasurementKind;
+	value: number;
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type HealthAvailability = 'available' | 'update-required' | 'unsupported';
+
+export type HealthStatus = {
+	availability: HealthAvailability;
+	connected: boolean;
+	syncedAt?: string;
+};
+
+/** The night that ended on a morning. Minutes count from that morning's midnight. */
+export type NightSleep = {
+	bedMinute: number;
+	wakeMinute: number;
+	asleepMinutes: number;
+	lightMinutes?: number;
+	deepMinutes?: number;
+	remMinutes?: number;
+	awakeMinutes?: number;
+};
+
+export type SleepNight = NightSleep & { date: string };
+
+export type SleepSummary = {
+	nights: SleepNight[];
+	averageMinutes?: number;
+	typicalBedMinute?: number;
+	typicalWakeMinute?: number;
+	bedtimeSpreadMinutes?: number;
+	wakeSpreadMinutes?: number;
+};
+
+export type Marker = 'hrv' | 'resting-heart-rate';
+
+export type Band = { low: number; high: number };
+
+export type BaselineStatus = 'below' | 'within' | 'above';
+
+export type MarkerPoint = {
+	date: string;
+	value?: number;
+	average?: number;
+	band?: Band;
+};
+
+export type MarkerSeries = {
+	marker: Marker;
+	points: MarkerPoint[];
+	average?: number;
+	band?: Band;
+	status?: BaselineStatus;
+};
+
+export type Behaviour =
+	| 'slept-seven-hours'
+	| 'earlier-bedtime'
+	| 'trained-day-before'
+	| 'energy-over-target-day-before'
+	| 'protein-at-target-day-before';
+
+export type Impact = {
+	behaviour: Behaviour;
+	withDays: number;
+	withoutDays: number;
+	withMean: number;
+	withoutMean: number;
+	changePercent: number;
+	clear: boolean;
+};
+
+export type Recovery = {
+	hrv?: MarkerSeries;
+	restingHeartRate?: MarkerSeries;
+	impactMarker?: Marker;
+	impacts: Impact[];
+};
+
+export type EnergyBalance = {
+	from: string;
+	to: string;
+	windowDays: number;
+	plannedDays: number;
+	plannedKcal?: number;
+	trendChangeKg?: number;
+	storedKcal?: number;
+	expenditureKcal?: number;
+	measuredDays: number;
+	measuredKcal?: number;
+};
+
 export type CommandErrorKind =
 	| 'catalogue-unavailable'
 	| 'conflict'
+	| 'health-unavailable'
 	| 'internal'
 	| 'invalid'
 	| 'not-found';

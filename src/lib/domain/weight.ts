@@ -11,8 +11,8 @@ export function rangeLabel(range: Range): string {
 	return `${range}d`;
 }
 
-/** The last `days` of the series, or all of it when `days` is 0. */
-export function visible(points: readonly WeightPoint[], days: Range): WeightPoint[] {
+/** The last `days` of a daily series, or all of it when `days` is 0. */
+export function visible<T>(points: readonly T[], days: Range): T[] {
 	if (days === 0 || points.length <= days) return [...points];
 	return points.slice(points.length - days);
 }
@@ -123,7 +123,7 @@ export function ticks({ min, max }: Domain, count = 3): number[] {
 }
 
 /** The index of the point nearest an x position, for reading a value off the chart. */
-export function nearest(points: readonly WeightPoint[], x: number, scale: Scale): number {
+export function nearest(points: readonly unknown[], x: number, scale: Scale): number {
 	if (points.length === 0) return -1;
 	let best = 0;
 	let bestDistance = Infinity;

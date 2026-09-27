@@ -6,7 +6,9 @@
 mod calendar;
 mod category;
 mod day_plan;
+mod health;
 mod meal;
+mod measurement;
 mod product;
 mod row;
 mod targets;

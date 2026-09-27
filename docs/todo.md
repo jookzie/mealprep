@@ -64,13 +64,31 @@ Each entry records what happens today, what is deferred, and what would trigger 
 - **Trigger**: wanting to see the distance to a goal rather than the direction of travel.
   Deliberately excluded from "simple" — see `docs/research/2026-09-20-weight-tracker-ui-ux.md`.
 
-## Weight against energy intake
-- **Today**: the calendar knows what was planned per day and the weight trend knows what
-  happened, and nothing joins them.
-- **Deferred**: a chart of the trend against the calorie balance that produced it, which is
-  the question a food planner with a weight tracker in it can uniquely answer.
-- **Trigger**: wanting to know whether the plan is working, rather than what the plan is.
-  Tracked as TBD-14 in the SRS.
+## Weight and body fat from a smart scale
+- **Today**: weigh-ins and measurements are typed in. Health Connect is read for sleep,
+  recovery and activity only; its weight and body-fat records are not requested.
+- **Deferred**: importing `WeightRecord` and `BodyFatRecord`, deciding which wins when a
+  typed and an imported figure land on the same date.
+- **Trigger**: a scale that writes to Health Connect.
+
+## Writing to Health Connect
+- **Today**: read-only (`HC-1`). WHOOP reads weight from Health Connect to improve its
+  calorie estimate, and gets nothing from here.
+- **Deferred**: writing weigh-ins, and perhaps planned nutrition, back as records.
+- **Trigger**: wanting another app to see what is recorded here.
+
+## Background health sync
+- **Today**: Health Connect is read when the Body screen opens and the last import is an hour
+  old, or on request.
+- **Deferred**: a periodic WorkManager job with `READ_HEALTH_DATA_IN_BACKGROUND`.
+- **Trigger**: a notification or widget that needs current figures without the app open.
+
+## Tuning the insight thresholds
+- **Today**: the constants in `service::recovery`, `service::sleep` and `service::energy`
+  follow the published practice they cite — a 60-day range at ±0.5 SD, five mornings a side
+  over 90 days, 7,700 kcal/kg — and are not user settings.
+- **Deferred**: exposing any of them, or adapting the energy density to the rate of change.
+- **Trigger**: a threshold that visibly misreads this user's data.
 
 ## Per-day cost on the calendar
 - **Today**: cost is derived for meals and day plans. The calendar shows macros per day and

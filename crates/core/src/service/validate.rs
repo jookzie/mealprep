@@ -1,6 +1,9 @@
 use crate::{
     Entity, Error, Result,
-    domain::{DayPlanDraft, DayPlanItem, Macros, MealDraft, Nutrients, ProductDraft},
+    domain::{
+        DayPlanDraft, DayPlanItem, Macros, MealDraft, MeasurementKind, MeasurementUnit, Nutrients,
+        ProductDraft,
+    },
 };
 
 /// Checks the given product draft, trimming what the user typed.
@@ -176,6 +179,38 @@ pub(super) fn weight(kilograms: f64) -> Result<f64> {
     verdict(Entity::WeightEntry, kilograms, reasons)
 }
 
+/// The range a measurement of the given kind can plausibly fall in.
+///
+/// Like the weigh-in's range, this catches a slipped decimal point or a figure typed in the
+/// wrong unit, and has no opinion about the body.
+fn plausible_measurement(kind: MeasurementKind) -> std::ops::RangeInclusive<f64> {
+    match (kind, kind.unit()) {
+        (MeasurementKind::Height, _) => 50.0..=275.0,
+        (_, MeasurementUnit::Percent) => 1.0..=75.0,
+        (_, MeasurementUnit::Centimetre) => 5.0..=300.0,
+    }
+}
+
+/// Checks a body measurement.
+pub(super) fn measurement(kind: MeasurementKind, value: f64) -> Result<f64> {
+    let range = plausible_measurement(kind);
+    let unit = match kind.unit() {
+        MeasurementUnit::Centimetre => "cm",
+        MeasurementUnit::Percent => "%",
+    };
+    let mut reasons = Vec::new();
+    if !is_amount(value) {
+        reasons.push("the measurement must be a positive number".to_owned());
+    } else if !range.contains(&value) {
+        reasons.push(format!(
+            "{value} {unit} is outside the plausible range of {} to {} {unit}",
+            range.start(),
+            range.end()
+        ));
+    }
+    verdict(Entity::Measurement, value, reasons)
+}
+
 fn push_macro_reasons(macros: Macros, reasons: &mut Vec<String>) {
     for (figure, value) in macros.named() {
         if !is_quantity(value) {
@@ -254,6 +289,14 @@ mod tests {
         for code in ["", "   ", "301/../x", "3017 6204", "٣٠١٧"] {
             assert!(catalogue_code(code).is_err(), "{code:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn rejects_a_waist_typed_in_metres_and_body_fat_as_a_fraction() {
+        assert!(measurement(MeasurementKind::Waist, 0.82).is_err());
+        assert!(measurement(MeasurementKind::BodyFat, 0.18).is_err());
+        assert_eq!(measurement(MeasurementKind::Waist, 82.0).unwrap(), 82.0);
+        assert_eq!(measurement(MeasurementKind::BodyFat, 18.0).unwrap(), 18.0);
     }
 
     #[test]
