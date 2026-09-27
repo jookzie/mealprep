@@ -9,7 +9,9 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(mealprep_health_connect::init());
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
 
@@ -32,11 +34,21 @@ pub fn run() {
             command::day_plan::get_day_plan,
             command::day_plan::list_day_plans,
             command::day_plan::update_day_plan,
+            command::health::connect_health,
+            command::health::energy_balance,
+            command::health::health_status,
+            command::health::install_health_connect,
+            command::health::recovery,
+            command::health::sleep_summary,
+            command::health::sync_health,
             command::meal::create_meal,
             command::meal::delete_meal,
             command::meal::get_meal,
             command::meal::list_meals,
             command::meal::update_meal,
+            command::measurement::delete_measurement,
+            command::measurement::list_measurements,
+            command::measurement::set_measurement,
             command::product::create_product,
             command::product::delete_product,
             command::product::get_catalogue_entry,

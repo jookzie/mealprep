@@ -2291,6 +2291,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mealprep-health-connect"
+version = "0.1.0"
+dependencies = [
+ "mealprep-core",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "time",
+]
+
+[[package]]
 name = "mealprep-openfoodfacts"
 version = "0.1.0"
 dependencies = [
@@ -2306,6 +2318,7 @@ name = "mealprep-rs"
 version = "0.1.0"
 dependencies = [
  "mealprep-core",
+ "mealprep-health-connect",
  "mealprep-openfoodfacts",
  "mealprep-sqlite",
  "serde",
@@ -2314,6 +2327,7 @@ dependencies = [
  "tauri-plugin-barcode-scanner",
  "tauri-plugin-opener",
  "thiserror 2.0.20",
+ "time",
  "uuid",
 ]
 

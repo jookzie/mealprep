@@ -25,6 +25,12 @@ pub(crate) fn now() -> String {
         .expect("internal error: the current UTC time always formats as RFC 3339")
 }
 
+pub(crate) fn format_timestamp(value: OffsetDateTime) -> String {
+    value
+        .format(&Rfc3339)
+        .expect("internal error: a timestamp within the year 0-9999 always formats as RFC 3339")
+}
+
 pub(crate) fn parse_timestamp(value: &str) -> Result<OffsetDateTime> {
     OffsetDateTime::parse(value, &Rfc3339).map_err(internal)
 }

@@ -1,0 +1,25 @@
+[package]
+name = "mealprep-health-connect"
+version = "0.1.0"
+description = "Health Connect as a source of health data, as a Tauri plugin"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+# tauri-plugin requires `links` to match the package name; it is how the app's Gradle build
+# finds the Android library in `android/`.
+links = "mealprep-health-connect"
+
+[dependencies]
+mealprep-core.workspace = true
+serde.workspace = true
+tauri.workspace = true
+time.workspace = true
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

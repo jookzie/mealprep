@@ -18,6 +18,7 @@ pub struct Error {
 pub enum ErrorKind {
     CatalogueUnavailable,
     Conflict,
+    HealthUnavailable,
     Internal,
     Invalid,
     NotFound,
@@ -30,6 +31,7 @@ impl From<CoreError> for Error {
             CoreError::Invalid { .. } => ErrorKind::Invalid,
             CoreError::Conflict { .. } => ErrorKind::Conflict,
             CoreError::CatalogueUnavailable { .. } => ErrorKind::CatalogueUnavailable,
+            CoreError::HealthUnavailable { .. } => ErrorKind::HealthUnavailable,
             CoreError::Internal { .. } => ErrorKind::Internal,
         };
         let message = error.to_string();

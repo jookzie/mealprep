@@ -9,11 +9,17 @@ import type {
 	CategoryScope,
 	DayPlan,
 	DayPlanDraft,
+	EnergyBalance,
+	HealthStatus,
 	Macros,
 	Meal,
 	MealDraft,
+	Measurement,
+	MeasurementKind,
 	Product,
 	ProductDraft,
+	Recovery,
+	SleepSummary,
 	Targets,
 	WeightEntry,
 	WeightSeries,
@@ -83,3 +89,20 @@ export const loadWeightSeries = () => call<WeightSeries>('weight_series');
 export const setWeightEntry = (date: string, kilograms: number) =>
 	call<WeightEntry>('set_weight_entry', { date, kilograms });
 export const deleteWeightEntry = (date: string) => call<void>('delete_weight_entry', { date });
+
+export const listMeasurements = () => call<Measurement[]>('list_measurements');
+export const setMeasurement = (date: string, kind: MeasurementKind, value: number) =>
+	call<Measurement>('set_measurement', { date, kind, value });
+export const deleteMeasurement = (date: string, kind: MeasurementKind) =>
+	call<void>('delete_measurement', { date, kind });
+
+// Every health read takes the device's today, which is what the user means by today.
+export const loadHealthStatus = () => call<HealthStatus>('health_status');
+/** Shows Health Connect's permission screen; answers whether access was granted. */
+export const connectHealth = () => call<boolean>('connect_health');
+export const installHealthConnect = () => call<void>('install_health_connect');
+export const syncHealth = (today: string) => call<void>('sync_health', { today });
+export const loadRecovery = (today: string) => call<Recovery>('recovery', { today });
+export const loadSleepSummary = (today: string) => call<SleepSummary>('sleep_summary', { today });
+export const loadEnergyBalance = (today: string) =>
+	call<EnergyBalance>('energy_balance', { today });

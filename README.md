@@ -82,7 +82,10 @@ Added: barcode scanning on phones (on desktop, type the barcode into search), a 
 step before every import that says who supplied the entry and what Open Food Facts itself
 doubts, and plausibility checks on every product form (energy against the macros, kJ
 against kcal, saturates and sugars against their totals, grams against 100 g). The checks
-warn and never block a save. Also a weight tracker, reached from Targets: weigh-ins are
-smoothed into a trend line drawn over the measurements, with the rate of change per week.
+warn and never block a save. Also a Body tab: a weight tracker whose weigh-ins are smoothed
+into a trend line with the rate of change per week; body measurements with the
+waist-to-height ratio; and, on Android, recovery, sleep and "what goes with better mornings"
+from Health Connect (a WHOOP or any other wearable that writes to it), plus the energy
+expenditure the plan and the weight trend imply.
 
 The page only works inside the Tauri webview; opened in a plain browser it says so.

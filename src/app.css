@@ -23,6 +23,8 @@
 	--carbs: #009e73;
 	--energy: #57534e;
 	--cost: #56b4e9;
+	/* A normal range behind a chart: visible on a card, quieter than any data mark. */
+	--band: #e9e6e3;
 
 	--radius: 12px;
 	--nav-height: 60px;
@@ -52,6 +54,7 @@
 		--danger: #f87171;
 		--warning: #fbbf24;
 		--energy: #d6d3d1;
+		--band: #2f2a27;
 	}
 }
 

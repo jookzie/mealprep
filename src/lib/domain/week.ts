@@ -15,7 +15,7 @@ function format(date: Date): IsoDate {
 	return date.toISOString().slice(0, 10);
 }
 
-function shiftDays(date: IsoDate, days: number): IsoDate {
+export function shiftDays(date: IsoDate, days: number): IsoDate {
 	const d = parse(date);
 	d.setUTCDate(d.getUTCDate() + days);
 	return format(d);

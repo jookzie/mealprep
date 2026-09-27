@@ -24,6 +24,9 @@ pub enum Error {
     #[error("cannot reach the product catalogue: {reason}")]
     CatalogueUnavailable { reason: String },
 
+    #[error("cannot reach Health Connect: {reason}")]
+    HealthUnavailable { reason: String },
+
     #[error("internal error: {reason}")]
     Internal { reason: String },
 }
@@ -38,7 +41,9 @@ pub enum Entity {
     CatalogueEntry,
     Category,
     DayPlan,
+    HealthDay,
     Meal,
+    Measurement,
     Product,
     Targets,
     WeightEntry,
@@ -51,7 +56,9 @@ impl fmt::Display for Entity {
             Self::CatalogueEntry => "catalogue entry",
             Self::Category => "category",
             Self::DayPlan => "day plan",
+            Self::HealthDay => "health day",
             Self::Meal => "meal",
+            Self::Measurement => "measurement",
             Self::Product => "product",
             Self::Targets => "targets",
             Self::WeightEntry => "weight entry",

@@ -1,7 +1,6 @@
-import { loadTargets, loadWeightSeries, read } from '$lib/api';
+import { loadTargets, read } from '$lib/api';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async () => ({
 	targets: await read(loadTargets()),
-	weight: await read(loadWeightSeries()),
 });

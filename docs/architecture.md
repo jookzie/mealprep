@@ -3,10 +3,12 @@
 ## Overview
 ```
 SvelteKit SPA (webview) ──invoke──▶ src-tauri commands ──▶ mealprep-core::Mealprep
-                                                               │            │
-                                                     SqliteStore (sqlx)   OpenFoodFacts (reqwest)
-                                                               │            │
-                                                        mealprep.db       Open Food Facts API
+                                              │                │            │
+                                              │      SqliteStore (sqlx)   OpenFoodFacts (reqwest)
+                                              │                │            │
+                                              │         mealprep.db       Open Food Facts API
+                                              │
+                                              └──▶ mealprep-health-connect ──▶ Health Connect (Android)
 ```
 Everything runs in one process on the device. The frontend builds to static files that
 Tauri serves; the Rust side owns all state.
@@ -21,6 +23,7 @@ sides are the same process, so the domain types serialise straight across the IP
 crates/core            domain types, business rules, storage traits (no I/O)
 crates/sqlite          SqliteStore and the schema migrations
 crates/openfoodfacts   the Catalogue trait over the public API
+crates/health-connect  a Tauri plugin reading Health Connect, with its Kotlin in android/
 src-tauri              Tauri commands, error serialisation, setup
 src                    the SvelteKit static SPA the webview loads
 docs/                  this document, the SRS, the standards, the deferred list
@@ -34,7 +37,8 @@ mise.toml              the tasks: format, lint, test, dev, android, autocommit
 | `mealprep-core` | Domain types, validation, derivation of macros and cost, storage traits | serde, time, uuid |
 | `mealprep-sqlite` | `SqliteStore`: every storage trait over one SQLite file | core, sqlx |
 | `mealprep-openfoodfacts` | `OpenFoodFacts`: the `Catalogue` trait over the public API | core, reqwest |
-| `mealprep-rs` (`src-tauri`) | Commands, error serialisation, opening the store in the app data dir | all three, tauri |
+| `mealprep-health-connect` | `HealthConnect`: reads Health Connect into a `HealthImport`; unsupported off Android | core, tauri |
+| `mealprep-rs` (`src-tauri`) | Commands, error serialisation, opening the store in the app data dir | all four, tauri |
 
 `core` has no I/O and no knowledge of SQLite or HTTP.
 
@@ -50,13 +54,19 @@ way for the same reason.
 
 ## Command surface
 `src-tauri/src/command/` splits by domain — `product.rs`, `meal.rs`, `day_plan.rs`,
-`calendar.rs`, `category.rs`, `targets.rs`, `weight.rs` — and each function is a thin `#[tauri::command]`
+`calendar.rs`, `category.rs`, `targets.rs`, `weight.rs`, `measurement.rs`, `health.rs` — and each function is a thin `#[tauri::command]`
 that takes `State<'_, AppState>`, calls one service method and returns its value. There is no
 DTO layer: the domain types are the wire format, so a command that compiles carries the shape
 the frontend declares.
 
 Commands are the whole public surface. Anything the frontend needs is a command; anything
 else stays in Rust.
+
+`sync_health` is the one command that makes three calls: the rules choose the range, the
+plugin reads it, and the rules summarise and store it. Health Connect is not a store trait on
+`Mealprep` because it is read on demand, only on Android, and only through a window, which
+`core` must not know exists. The health reads take the frontend's `today`, because the device's
+local date is what the user means by today.
 
 ## Frontend layout
 ```
@@ -71,10 +81,13 @@ src/
       mutate.ts        runMutation
     domain/            pure logic: macro arithmetic, week dates, the calendar join,
                        plausibility, sorting, formatting
-    components/        forms, pickers, meters, the weight chart, the scan overlay,
+    components/        forms, pickers, meters, the weight, trend and sleep charts, the scan overlay,
                        the page header
 ```
 Routes own all I/O. Components take data and callbacks, and never call `invoke`.
+
+The fifth tab, Body, is a hub (`/body`) of one-line cards leading to targets, weight,
+measurements, recovery, sleep and energy balance; the screens behind it keep the tab lit.
 
 The shell is a bottom tab bar in `+layout.svelte`, sized around
 `env(safe-area-inset-bottom)` and hidden while a scan is running. There is no sidebar and no
@@ -159,6 +172,21 @@ Editors load the entity first, because every write is a full replacement.
   zero flattens every change worth seeing, with padding below the data so ordinary
   fluctuation cannot read as a collapse. Weight takes the ink colours rather than a macro
   hue: it is not a macro, and the accent means "interactive" everywhere else.
+- **Health Connect is imported, not queried**: each sync summarises what Health Connect holds
+  into one `health_days` row per morning and replaces the days it read, so every insight works
+  offline, is tested in `core` without a device, and does not change when the source prunes
+  its history. The Kotlin side reports plain records; the rules decide which morning a night
+  belongs to (the one it ends on, and readings from 18:00 count towards the next) and keep
+  only the longest session of a night. Energy and exercise are the exception: Health Connect
+  aggregates them per day itself, because only it knows the priority between apps.
+- **Insights are derived on read in Rust** (`service::recovery`, `service::sleep`,
+  `service::energy`), like the weight trend, with their thresholds as named constants beside
+  the reasoning. Every figure is optional and travels with its counts. The research behind
+  them is `docs/research/2026-09-27-health-insights-ui-ux.md`.
+- **One chart component for readings**: `TrendChart` draws dots, a line and an optional
+  band from `lib/domain/trend-chart.ts`, reusing the weight chart's scale and ticks. It serves
+  HRV, resting heart rate and every measurement kind; sleep has its own bar chart because a
+  night is a span, not a value.
 - **Bulk calendar assignment is a sequential loop**: SQLite has one writer.
 - **Open Food Facts over rustls with webpki roots**: no OpenSSL or platform verifier to
   cross-compile or initialise on Android.
@@ -182,6 +210,9 @@ Editors load the entity first, because every write is a full replacement.
 - `Category` — name and a scope (meals or day plans) fixed at creation.
 - `CalendarDay` — date → day plan, at most one per date.
 - `Targets` — energy (kcal), fat, protein, carbs. Exactly one row.
+- `Measurement` — (date, kind) → value, at most one per kind per date; the kind fixes the unit (cm, or % for body fat).
+- `HealthDay` — date → the night that ended that morning (`NightSleep`: bed and wake minute from that midnight, time asleep and per stage), resting heart rate, HRV, respiratory rate, and the day's active and total energy and exercise minutes, every one optional. `HealthImport` is what a source reads and exists only on the way in.
+- `Recovery`, `SleepSummary`, `EnergyBalance` — derived reads, never stored: marker series with their 7-day averages and normal ranges plus the behaviour impacts; nights with duration and regularity; planned intake, trend change and implied expenditure beside the wearable's figure.
 - `WeightEntry` — date → kilograms, at most one per date. `WeightSeries` is the derived read: one point per day from the first weigh-in to the last, each carrying the trend and the measurement where there was one, plus the trend's current value and its rate of change per week.
 
 Domain types carry `createdAt` and `updatedAt`; `deleted_at` is a column the store filters on
@@ -191,7 +222,8 @@ meal or day plan are derived on read and never stored.
 ## Data access
 `crates/sqlite/migrations/` is the schema — `0001_initial.sql` for `products`, `categories`,
 `meals`, `meal_servings`, `day_plans`, `day_plan_items`, `calendar_days` and `targets`, and
-`0002_weight_entries.sql` for `weight_entries` — embedded with `sqlx::migrate!` and applied
+`0002_weight_entries.sql` for `weight_entries`, `0003_body_and_health.sql` for `measurements`,
+`health_days` and the `health_sync` singleton — embedded with `sqlx::migrate!` and applied
 when the store opens. Queries are hand-written SQL in
 `crates/sqlite`; rows map to domain types there, and nothing above that crate sees a row type.
 
@@ -209,6 +241,11 @@ message from the staged diff and opens it for review.
 `storePassword`, `keyAlias` and `keyPassword`; the task refuses to run without it, because a
 release build with no signing config succeeds and yields an APK that cannot be installed.
 The debug tasks sign with the default debug key in `~/.android` instead.
+
+The Android app's `minSdk` is 26, the floor of the Health Connect client, and the Kotlin
+Gradle plugin is 2.1: the client library ships Kotlin 2 metadata, which a 1.9 compiler cannot
+read. The plugin's Gradle module is picked up by `tauri-build` through the crate's `links`
+key, like the barcode scanner's.
 
 Debug builds carry the `.debug` application id suffix
 (`tauri.conf.json > bundle > android > debugApplicationIdSuffix`), so a debug and a release
