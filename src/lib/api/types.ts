@@ -114,6 +114,12 @@ export type DayPlan = {
 	id: string;
 	label: string;
 	categoryId?: string;
+	/**
+	 * Set when this plan is one date's own copy of another, made so that editing that
+	 * date could not move every other date sharing the original. A copy is absent from
+	 * listDayPlans and from every picker; only the calendar read resolves one.
+	 */
+	sourcePlanId?: string;
 	items: DayPlanItem[];
 	macros: Macros;
 	cost: Cost;
@@ -160,7 +166,86 @@ export type WeightSeries = {
 	ratePerWeek?: number;
 };
 
+/** A span of dates an operation acts on, both ends included. */
+export type DateRange = {
+	from: string;
+	to: string;
+};
+
+/** Which entry of a day's order an operation names. */
+export type ItemRef = { kind: 'meal'; mealId: string } | { kind: 'product'; productId: string };
+
+/**
+ * One typed edit the assistant may propose. The model answers with these and never
+ * writes: the rules check every one against the real data, and the user confirms.
+ */
+export type Operation =
+	| { kind: 'adjust-product-amount'; dates: DateRange; productId: string; deltaAmount: number }
+	| { kind: 'add-item'; dates: DateRange; item: DayPlanItemDraft }
+	| { kind: 'remove-item'; dates: DateRange; item: ItemRef }
+	| { kind: 'swap-meal'; dates: DateRange; fromMealId: string; toMealId: string }
+	| { kind: 'assign-plan'; dates: DateRange; dayPlanId: string }
+	| { kind: 'clear-plan'; dates: DateRange };
+
+export type OperationKind = Operation['kind'];
+
+/** What the assistant answered. Nothing in it has been checked yet. */
+export type Proposal = {
+	request: string;
+	rationale: string;
+	operations: Operation[];
+};
+
+/** What one date would become. */
+export type PreviewDay = {
+	date: string;
+	/** Absent when the date would be left unplanned. */
+	label?: string;
+	changes: string[];
+	before: Macros;
+	after: Macros;
+	/** `after` minus the targets; absent when no targets are set. */
+	targetDelta?: Macros;
+	/** Whether applying detaches this date onto its own copy of the plan. */
+	detaches: boolean;
+};
+
+/** A checked proposal, as the user reads it before confirming. */
+export type Preview = {
+	proposal: Proposal;
+	days: PreviewDay[];
+	targets?: Macros;
+};
+
+/** What an applied request did to one date, and what it takes to put it back. */
+export type AppliedChange = {
+	date: string;
+	previousDayPlanId?: string;
+	previousLabel?: string;
+	dayPlanId?: string;
+	label?: string;
+	detached: boolean;
+	changes: string[];
+};
+
+export type AssistantRecord = {
+	id: string;
+	request: string;
+	rationale: string;
+	operations: Operation[];
+	changes: AppliedChange[];
+	createdAt: string;
+};
+
+/** Whether the assistant has a key. The key itself is never returned in full. */
+export type AssistantKeyStatus = {
+	present: boolean;
+	/** The last four characters of the stored key. */
+	hint?: string;
+};
+
 export type CommandErrorKind =
+	| 'assistant-unavailable'
 	| 'catalogue-unavailable'
 	| 'conflict'
 	| 'internal'

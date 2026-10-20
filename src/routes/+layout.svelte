@@ -2,6 +2,7 @@
 	import '../app.css';
 	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import Layers from '@lucide/svelte/icons/layers';
+	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import Target from '@lucide/svelte/icons/target';
 	import Utensils from '@lucide/svelte/icons/utensils';
 	import Wheat from '@lucide/svelte/icons/wheat';
@@ -17,6 +18,7 @@
 	 */
 	const sections = [
 		{ href: '/calendar', label: 'Calendar', icon: CalendarDays },
+		{ href: '/assistant', label: 'Assistant', icon: Sparkles },
 		{ href: '/day-plans', label: 'Day plans', icon: Layers },
 		{ href: '/meals', label: 'Meals', icon: Utensils },
 		{ href: '/products', label: 'Products', icon: Wheat },
@@ -74,7 +76,7 @@
 		height: calc(var(--nav-height) + env(safe-area-inset-bottom));
 		padding-bottom: env(safe-area-inset-bottom);
 		display: grid;
-		grid-template-columns: repeat(5, 1fr);
+		grid-template-columns: repeat(6, 1fr);
 		background: var(--surface);
 		border-top: 1px solid var(--border);
 		z-index: 10;
@@ -82,13 +84,24 @@
 
 	.tabs a {
 		display: flex;
+		min-width: 0;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		gap: 2px;
-		font-size: 0.7rem;
+		/* Six tabs on a 360px phone: the labels have to shrink rather than wrap. */
+		font-size: 0.65rem;
 		text-decoration: none;
 		color: var(--muted);
+		padding: 0 0.1rem;
+		text-align: center;
+	}
+
+	.tabs span {
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.tabs a[aria-current='page'] {

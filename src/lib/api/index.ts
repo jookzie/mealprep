@@ -2,6 +2,8 @@
 // routes read through `read` in their load functions and write through `runMutation`.
 import { type InvokeArgs, invoke, isTauri } from '@tauri-apps/api/core';
 import type {
+	AssistantKeyStatus,
+	AssistantRecord,
 	CalendarDay,
 	CatalogueEntry,
 	Category,
@@ -12,8 +14,10 @@ import type {
 	Macros,
 	Meal,
 	MealDraft,
+	Preview,
 	Product,
 	ProductDraft,
+	Proposal,
 	Targets,
 	WeightEntry,
 	WeightSeries,
@@ -70,6 +74,12 @@ export const deleteDayPlan = (dayPlanId: string) => call<void>('delete_day_plan'
 
 export const listCalendarDays = (from: string, to: string) =>
 	call<CalendarDay[]>('list_calendar_days', { from, to });
+/**
+ * The plans the dates in the range are assigned, resolved. listDayPlans leaves the
+ * assistant's day-local copies out, so a date it has detached is only resolvable here.
+ */
+export const listCalendarDayPlans = (from: string, to: string) =>
+	call<DayPlan[]>('list_calendar_day_plans', { from, to });
 export const assignCalendarDay = (date: string, dayPlanId: string) =>
 	call<CalendarDay>('assign_calendar_day', { date, dayPlanId });
 export const unassignCalendarDay = (date: string) => call<void>('unassign_calendar_day', { date });
@@ -83,3 +93,15 @@ export const loadWeightSeries = () => call<WeightSeries>('weight_series');
 export const setWeightEntry = (date: string, kilograms: number) =>
 	call<WeightEntry>('set_weight_entry', { date, kilograms });
 export const deleteWeightEntry = (date: string) => call<void>('delete_weight_entry', { date });
+
+/** Asks the assistant what the request means. It writes nothing; the preview is read-only. */
+export const proposeAssistantEdit = (request: string) =>
+	call<Preview>('propose_assistant_edit', { request });
+/** Applies the operations the user confirmed, which are re-checked before anything is written. */
+export const applyAssistantEdit = (proposal: Proposal) =>
+	call<AssistantRecord>('apply_assistant_edit', { proposal });
+export const listAssistantRequests = () => call<AssistantRecord[]>('list_assistant_requests');
+export const loadAssistantKeyStatus = () => call<AssistantKeyStatus>('assistant_key_status');
+export const setAssistantKey = (key: string) =>
+	call<AssistantKeyStatus>('set_assistant_key', { key });
+export const clearAssistantKey = () => call<void>('clear_assistant_key');
