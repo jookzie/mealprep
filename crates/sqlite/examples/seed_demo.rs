@@ -17,11 +17,12 @@ use std::{env, fs, path::PathBuf, process};
 use mealprep_core::{
     Entity, Error, Result,
     domain::{
-        CatalogueEntry, CategoryDraft, CategoryScope, DayPlanDraft, DayPlanItem, Macros, MealDraft,
-        Nutrients, ProductDraft, Serving, Unit, parse_iso_date,
+        AssistantContext, CatalogueEntry, CategoryDraft, CategoryScope, DateRange, DayPlanDraft,
+        DayPlanItem, Macros, MealDraft, Nutrients, Operation, ProductDraft, Proposal, Serving,
+        Unit, parse_iso_date,
     },
     service::Mealprep,
-    store::Catalogue,
+    store::{Assistant, Catalogue},
 };
 use mealprep_sqlite::SqliteStore;
 use sqlx::{Connection, SqliteConnection};
@@ -45,7 +46,23 @@ impl Catalogue for NoCatalogue {
     }
 }
 
-type Demo = Mealprep<SqliteStore, NoCatalogue>;
+/// Nor a model. The one assistant request the demo carries is applied the way a confirmed
+/// proposal is applied, which never reaches the assistant: only proposing does, and
+/// proposing needs the user's own API key, which the demo deliberately does not carry.
+struct NoAssistant;
+
+impl Assistant for NoAssistant {
+    async fn propose(
+        &self,
+        _key: &str,
+        _request: &str,
+        _context: &AssistantContext,
+    ) -> Result<Proposal> {
+        Err(internal("the seed proposes nothing".to_owned()))
+    }
+}
+
+type Demo = Mealprep<SqliteStore, NoCatalogue, NoAssistant>;
 
 #[tokio::main]
 async fn main() {
@@ -80,7 +97,7 @@ async fn run(out: PathBuf, today: Date) -> Result<()> {
     // Seeded into a scratch file and copied out with VACUUM INTO, so what is written is one
     // compact file with no WAL sidecars to lose on the way to a device.
     let scratch = env::temp_dir().join(format!("mealprep-seed-{}.db", Uuid::new_v4()));
-    let demo = Mealprep::new(SqliteStore::open(&scratch).await?, NoCatalogue);
+    let demo = Mealprep::new(SqliteStore::open(&scratch).await?, NoCatalogue, NoAssistant);
     seed(&demo, today).await?;
     drop(demo);
 
@@ -112,6 +129,7 @@ async fn seed(demo: &Demo, today: Date) -> Result<()> {
     calendar(demo, &plans, today).await?;
     weight(demo, today).await?;
     demo.set_targets(macros(2000.0, 65.0, 140.0, 220.0)).await?;
+    assistant(demo, &plans, &products, today).await?;
 
     // Deleted last, once something refers to each, so every join has a miss to render.
     demo.delete_product(products.protein_bar).await?;
@@ -549,6 +567,9 @@ async fn day_plans(demo: &Demo, p: &Products, c: &Categories, m: &Meals) -> Resu
 
     Ok(Plans {
         // Over the energy, protein and carbohydrate targets: the meters show the hatch.
+        // The loose scoop of whey is what the assistant's own example adjusts: a product
+        // inside a meal is shared, so only an item of the day's own order can be changed
+        // for one day.
         training_a: plan(
             "Training day A",
             Some(c.training),
@@ -558,6 +579,7 @@ async fn day_plans(demo: &Demo, p: &Products, c: &Categories, m: &Meals) -> Resu
                 meal(m.yoghurt_whey),
                 product(p.banana, 120.0),
                 meal(m.salmon_dinner),
+                product(p.whey, 60.0),
                 product(p.chocolate, 20.0),
             ],
         )
@@ -570,6 +592,7 @@ async fn day_plans(demo: &Demo, p: &Products, c: &Categories, m: &Meals) -> Resu
                 meal(m.leftovers),
                 meal(m.bar_and_apple),
                 meal(m.salmon_dinner),
+                product(p.whey, 60.0),
                 product(p.chocolate, 20.0),
             ],
         )
@@ -658,6 +681,39 @@ async fn calendar(demo: &Demo, plans: &Plans, today: Date) -> Result<()> {
     // Tomorrow keeps pointing at a plan that is deleted at the end of the seed.
     demo.assign_calendar_day(today + Duration::days(1), plans.old_cut)
         .await?;
+    Ok(())
+}
+
+// assistant
+
+/// One applied assistant request, so the demo shows what it leaves behind.
+///
+/// The request is applied rather than proposed, because proposing would need the user's
+/// own API key. It names the next few training days, which are the only ones carrying a
+/// loose scoop of whey, and each of them is detached onto its own copy of the plan: the
+/// training days already past keep pointing at the original, so the history does not move.
+async fn assistant(demo: &Demo, plans: &Plans, p: &Products, today: Date) -> Result<()> {
+    let days = demo
+        .list_calendar_days(today, today + Duration::days(13))
+        .await?;
+    let operations: Vec<Operation> = days
+        .iter()
+        .filter(|day| day.day_plan_id == plans.training_a || day.day_plan_id == plans.training_b)
+        .take(3)
+        .map(|day| Operation::AdjustProductAmount {
+            dates: DateRange::just(day.date),
+            product_id: p.whey,
+            delta_amount: -40.0,
+        })
+        .collect();
+
+    demo.apply_assistant_edit(Proposal {
+        request: "the next few training days I have 40 g less whey".to_owned(),
+        rationale: "Took 40 g off the loose scoop of whey on each of those days, leaving 20 g."
+            .to_owned(),
+        operations,
+    })
+    .await?;
     Ok(())
 }
 

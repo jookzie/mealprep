@@ -1,16 +1,19 @@
 //! Exercises the business rules against a real, in-memory SQLite store.
 
+use std::sync::{Arc, Mutex};
+
 use mealprep_core::{
     Entity, Error, Result,
     domain::{
-        CatalogueEntry, CategoryDraft, CategoryScope, DayPlanDraft, DayPlanItem, EntrySource,
-        Macros, MealDraft, Nutrients, ProductDraft, ResolvedDayPlanItem, Serving, Unit,
-        parse_iso_date,
+        AssistantContext, CatalogueEntry, CategoryDraft, CategoryScope, DateRange, DayPlanDraft,
+        DayPlanItem, EntrySource, Macros, MealDraft, Nutrients, Operation, ProductDraft, Proposal,
+        ResolvedDayPlan, ResolvedDayPlanItem, Serving, Unit, parse_iso_date,
     },
     service::Mealprep,
-    store::Catalogue,
+    store::{Assistant, Catalogue},
 };
 use mealprep_sqlite::SqliteStore;
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 // test types
@@ -43,9 +46,47 @@ impl Catalogue for FixedCatalogue {
     }
 }
 
-async fn mealprep(catalogue: FixedCatalogue) -> Mealprep<SqliteStore, FixedCatalogue> {
+/// Stands in for the model: the test writes the operations, the rules check them. What
+/// a real adapter would add is an HTTP call, which these tests are not about.
+#[derive(Clone, Default)]
+struct ScriptedAssistant {
+    answer: Arc<Mutex<Vec<Operation>>>,
+}
+
+impl ScriptedAssistant {
+    fn answers(&self, operations: Vec<Operation>) {
+        *self.answer.lock().unwrap() = operations;
+    }
+}
+
+impl Assistant for ScriptedAssistant {
+    async fn propose(
+        &self,
+        _key: &str,
+        request: &str,
+        _context: &AssistantContext,
+    ) -> Result<Proposal> {
+        Ok(Proposal {
+            request: request.to_owned(),
+            rationale: "Adjusted the days you named.".to_owned(),
+            operations: self.answer.lock().unwrap().clone(),
+        })
+    }
+}
+
+type Rules = Mealprep<SqliteStore, FixedCatalogue, ScriptedAssistant>;
+
+async fn mealprep(catalogue: FixedCatalogue) -> Rules {
     let store = SqliteStore::open_in_memory().await.unwrap();
-    Mealprep::new(store, catalogue)
+    Mealprep::new(store, catalogue, ScriptedAssistant::default())
+}
+
+/// The rules and the handle that scripts what the assistant will answer.
+async fn with_assistant() -> (Rules, ScriptedAssistant) {
+    let store = SqliteStore::open_in_memory().await.unwrap();
+    let assistant = ScriptedAssistant::default();
+    let rules = Mealprep::new(store, FixedCatalogue::default(), assistant.clone());
+    (rules, assistant)
 }
 
 fn product_draft(name: &str, energy_kcal: f64, cost: Option<f64>) -> ProductDraft {
@@ -545,7 +586,11 @@ async fn a_database_file_keeps_its_rows_across_openings() {
     let path = std::env::temp_dir().join(format!("mealprep-test-{}.db", Uuid::new_v4()));
 
     let first = SqliteStore::open(&path).await.unwrap();
-    let mealprep = Mealprep::new(first, FixedCatalogue::default());
+    let mealprep = Mealprep::new(
+        first,
+        FixedCatalogue::default(),
+        ScriptedAssistant::default(),
+    );
     mealprep
         .create_product(product_draft("Oats", 380.0, None))
         .await
@@ -553,7 +598,11 @@ async fn a_database_file_keeps_its_rows_across_openings() {
     drop(mealprep);
 
     let second = SqliteStore::open(&path).await.unwrap();
-    let mealprep = Mealprep::new(second, FixedCatalogue::default());
+    let mealprep = Mealprep::new(
+        second,
+        FixedCatalogue::default(),
+        ScriptedAssistant::default(),
+    );
     assert_eq!(mealprep.list_products().await.unwrap().len(), 1);
     drop(mealprep);
 
@@ -561,4 +610,252 @@ async fn a_database_file_keeps_its_rows_across_openings() {
         let file = format!("{}{suffix}", path.display());
         std::fs::remove_file(file).ok();
     }
+}
+
+#[tokio::test]
+async fn an_assistant_edit_detaches_the_dates_it_names_and_leaves_the_past_alone() {
+    let (mealprep, assistant) = with_assistant().await;
+    let whey = mealprep
+        .create_product(product_draft("Whey", 380.0, Some(2.0)))
+        .await
+        .unwrap();
+    let plan = mealprep
+        .create_day_plan(DayPlanDraft {
+            label: "Training day".to_owned(),
+            category_id: None,
+            items: vec![DayPlanItem::Product {
+                product_id: whey.id,
+                amount: 60.0,
+            }],
+        })
+        .await
+        .unwrap();
+
+    // The same plan on two days gone and two to come, which is the case the whole
+    // copy-on-write question is about.
+    let today = OffsetDateTime::now_utc().date();
+    for offset in [-2, -1, 0, 1] {
+        mealprep
+            .assign_calendar_day(today + Duration::days(offset), plan.id)
+            .await
+            .unwrap();
+    }
+
+    mealprep
+        .set_assistant_key("sk-ant-test-key".to_owned())
+        .await
+        .unwrap();
+    assistant.answers(vec![Operation::AdjustProductAmount {
+        dates: DateRange {
+            from: today,
+            to: today + Duration::days(1),
+        },
+        product_id: whey.id,
+        delta_amount: -40.0,
+    }]);
+
+    let preview = mealprep
+        .propose_assistant_edit("next 2 days I have 40 g less whey".to_owned())
+        .await
+        .unwrap();
+    assert_eq!(preview.days.len(), 2);
+    assert!(preview.days.iter().all(|day| day.detaches));
+
+    // Proposing wrote nothing.
+    assert_eq!(mealprep.list_day_plans().await.unwrap().len(), 1);
+
+    let record = mealprep
+        .apply_assistant_edit(preview.proposal.clone())
+        .await
+        .unwrap();
+    assert_eq!(record.changes.len(), 2);
+
+    // The copies are not plans the user keeps, so neither the list nor a picker sees them.
+    let kept = mealprep.list_day_plans().await.unwrap();
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].id, plan.id);
+    assert_eq!(amount_of(&kept[0], whey.id), Some(60.0));
+
+    // Both past dates still point at the original, so the history cannot have moved.
+    for offset in [-2, -1] {
+        let date = today + Duration::days(offset);
+        let days = mealprep.list_calendar_days(date, date).await.unwrap();
+        assert_eq!(days[0].day_plan_id, plan.id, "{date} moved");
+    }
+
+    // The two future dates point at copies of it, one each, carrying the new amount.
+    let mut copies = Vec::new();
+    for offset in [0, 1] {
+        let date = today + Duration::days(offset);
+        let days = mealprep.list_calendar_days(date, date).await.unwrap();
+        let assigned = days[0].day_plan_id;
+        assert_ne!(assigned, plan.id);
+        let copy = mealprep.get_day_plan(assigned).await.unwrap();
+        assert_eq!(copy.source_plan_id, Some(plan.id));
+        assert_eq!(copy.label, "Training day");
+        assert_eq!(amount_of(&copy, whey.id), Some(20.0));
+        copies.push(assigned);
+    }
+    assert_ne!(copies[0], copies[1], "each date gets its own copy");
+
+    // A view that joins dates to plans can still resolve a detached date.
+    let joined = mealprep
+        .list_calendar_day_plans(today - Duration::days(2), today + Duration::days(1))
+        .await
+        .unwrap();
+    assert_eq!(joined.len(), 3, "the original and the two copies");
+
+    // A copy shares the label it was copied from, and that is not a clash with it.
+    mealprep
+        .update_day_plan(
+            plan.id,
+            DayPlanDraft {
+                label: "Training day".to_owned(),
+                category_id: None,
+                items: vec![DayPlanItem::Product {
+                    product_id: whey.id,
+                    amount: 60.0,
+                }],
+            },
+        )
+        .await
+        .unwrap();
+
+    // The log survives the round trip through the database, operations included.
+    let log = mealprep.list_assistant_requests().await.unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].id, record.id);
+    assert_eq!(log[0].request, "next 2 days I have 40 g less whey");
+    assert_eq!(log[0].operations, preview.proposal.operations);
+    assert_eq!(log[0].changes, record.changes);
+    assert!(
+        log[0]
+            .changes
+            .iter()
+            .all(|change| change.previous_day_plan_id == Some(plan.id) && change.detached)
+    );
+
+    // A second edit to a date that is already detached reuses its copy.
+    assistant.answers(vec![Operation::AddItem {
+        dates: DateRange::just(today),
+        item: DayPlanItem::Product {
+            product_id: whey.id,
+            amount: 10.0,
+        },
+    }]);
+    let preview = mealprep
+        .propose_assistant_edit("make it another 10 g today".to_owned())
+        .await
+        .unwrap();
+    assert!(
+        !preview.days[0].detaches,
+        "the date already has its own copy"
+    );
+    let record = mealprep
+        .apply_assistant_edit(preview.proposal)
+        .await
+        .unwrap();
+    assert_eq!(record.changes[0].day_plan_id, Some(copies[0]));
+    assert_eq!(mealprep.list_day_plans().await.unwrap().len(), 1);
+    assert_eq!(mealprep.list_assistant_requests().await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn the_assistant_refuses_a_past_date_unless_the_request_names_one() {
+    let (mealprep, assistant) = with_assistant().await;
+    let whey = mealprep
+        .create_product(product_draft("Whey", 380.0, Some(2.0)))
+        .await
+        .unwrap();
+    let plan = mealprep
+        .create_day_plan(DayPlanDraft {
+            label: "Training day".to_owned(),
+            category_id: None,
+            items: vec![DayPlanItem::Product {
+                product_id: whey.id,
+                amount: 60.0,
+            }],
+        })
+        .await
+        .unwrap();
+
+    let today = OffsetDateTime::now_utc().date();
+    let yesterday = today - Duration::days(1);
+    mealprep
+        .assign_calendar_day(yesterday, plan.id)
+        .await
+        .unwrap();
+    mealprep
+        .set_assistant_key("sk-ant-test-key".to_owned())
+        .await
+        .unwrap();
+    assistant.answers(vec![Operation::AdjustProductAmount {
+        dates: DateRange::just(yesterday),
+        product_id: whey.id,
+        delta_amount: -40.0,
+    }]);
+
+    assert!(matches!(
+        mealprep
+            .propose_assistant_edit("40 g less whey".to_owned())
+            .await,
+        Err(Error::Invalid { .. })
+    ));
+
+    // The same operation, from a request that says the past date out loud, goes through.
+    let preview = mealprep
+        .propose_assistant_edit("yesterday I had 40 g less whey".to_owned())
+        .await
+        .unwrap();
+    mealprep
+        .apply_assistant_edit(preview.proposal)
+        .await
+        .unwrap();
+    let assigned = mealprep
+        .list_calendar_days(yesterday, yesterday)
+        .await
+        .unwrap()[0]
+        .day_plan_id;
+    assert_ne!(assigned, plan.id, "the past date got its own copy too");
+    assert_eq!(
+        amount_of(&mealprep.get_day_plan(plan.id).await.unwrap(), whey.id),
+        Some(60.0)
+    );
+}
+
+#[tokio::test]
+async fn the_assistant_is_off_until_a_key_is_pasted_in() {
+    let mealprep = mealprep(FixedCatalogue::default()).await;
+
+    let status = mealprep.assistant_key_status().await.unwrap();
+    assert!(!status.present && status.hint.is_none());
+    assert!(matches!(
+        mealprep
+            .propose_assistant_edit("anything at all".to_owned())
+            .await,
+        Err(Error::Invalid { .. })
+    ));
+
+    let status = mealprep
+        .set_assistant_key("sk-ant-api03-tail".to_owned())
+        .await
+        .unwrap();
+    assert!(status.present);
+    // The key is never handed back in full, only the tail of it.
+    assert_eq!(status.hint.as_deref(), Some("tail"));
+
+    mealprep.clear_assistant_key().await.unwrap();
+    assert!(!mealprep.assistant_key_status().await.unwrap().present);
+    // Clearing again is not a failure: the end state is what was asked for.
+    mealprep.clear_assistant_key().await.unwrap();
+}
+
+/// How much of the given product a resolved plan carries as an item of its own.
+fn amount_of(plan: &ResolvedDayPlan, product_id: Uuid) -> Option<f64> {
+    plan.items.iter().find_map(|item| match item {
+        ResolvedDayPlanItem::Product { product } if product.id == product_id => {
+            Some(product.amount)
+        }
+        _ => None,
+    })
 }
