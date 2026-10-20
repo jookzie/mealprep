@@ -1,0 +1,14 @@
+{
+  "id": "msg_01DemoRefusal",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5",
+  "content": [],
+  "stop_reason": "refusal",
+  "stop_details": {
+    "type": "refusal",
+    "category": null,
+    "explanation": "This request asks for something the model will not help with."
+  },
+  "usage": { "input_tokens": 2790, "output_tokens": 0 }
+}

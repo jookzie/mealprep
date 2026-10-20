@@ -24,6 +24,9 @@ pub enum Error {
     #[error("cannot reach the product catalogue: {reason}")]
     CatalogueUnavailable { reason: String },
 
+    #[error("cannot reach the assistant: {reason}")]
+    AssistantUnavailable { reason: String },
+
     #[error("internal error: {reason}")]
     Internal { reason: String },
 }
