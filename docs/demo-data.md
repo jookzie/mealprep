@@ -13,6 +13,12 @@ mise run demo:seed -- 2026-09-27            # rebuild it around a given day
 mise run android:db:push -- demo/mealprep-demo.db   # load it into the debug install
 ```
 
+The acceptance release build also ships this file: it is compiled into the binary and
+written into the app data directory on first launch, so that install starts from this
+dataset rather than empty, and Targets → **Reset to demo data** puts it back. See
+`docs/release.md`. A rebuild of this file therefore changes what the next acceptance build
+starts from.
+
 On desktop, stop the app and copy it over `mealprep.db` in the app data directory
 (`~/.local/share/com.mertan.mealprep/` on Linux). Either way it replaces the data that was
 there; `android:db:push` saves that first, a desktop copy does not.

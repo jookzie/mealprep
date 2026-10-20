@@ -229,6 +229,20 @@ the two separate databases. The release install's data has no route off the devi
 `crates/sqlite/examples/seed_demo.rs`, writing through the services so the rules apply to it;
 `docs/demo-data.md` says which data shows which feature.
 
+`.github/workflows/check.yml` runs the same four tasks on every push and pull request, in
+one job, with bun from mise and Rust from rustup. `.github/workflows/release.yml` builds the
+signed arm64 APK and attaches it to a GitHub Release, which Obtainium installs from: a tag
+`v*` is production, a push to `main` is the acceptance environment, published as a
+prerelease. Acceptance differs by application id, launcher label and version code only,
+all three read from the environment by `src-tauri/gen/android/app/build.gradle.kts` so that
+an unset environment is exactly the production build, plus the `acceptance` cargo feature
+on `mealprep-rs`, which compiles `demo/mealprep-demo.db` into the binary, seeds it in
+`src-tauri/src/setup.rs` when the data directory holds no database, and adds the reset
+command. Android gives each application id its own private storage, which is what keeps the
+two installs' data apart. `docs/release.md` is the whole of it: the triggers, the four
+secrets, and the rules — same id, same key, additive migrations — that stop an update from
+being the thing that deletes the database.
+
 ## Future: a cloud database
 Add a crate (e.g. `crates/postgres`) implementing the `core::store` traits with sqlx's
 Postgres driver, then change `AppState`. Nothing in `core` or the frontend changes.
