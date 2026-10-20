@@ -138,7 +138,7 @@ Nutrients are shown as the four macros, with the full nutrient set behind an exp
 | Calendar | `/calendar` | `CL-1`–`CL-5`, `TG-2`, `TG-3` |
 | Targets | `/targets` | `TG-1`, `WT-6` — the macro targets, and the weight trend beside them |
 | Weight | `/weight` | `WT-1`–`WT-7` — quick log, the graph, and the weigh-in history |
-| Assistant | `/assistant` | `AS-1`–`AS-9` — the request, the preview with Apply or Discard, the API key, and what has been applied |
+| Assistant | `/assistant` | `AS-1`–`AS-10` — the request, the preview with Apply or Discard, the API key, and what has been applied |
 
 Creating and editing are screens rather than dialogs, because every write replaces the whole
 entity and so has to start from a fresh read. Dialogs carry what is genuinely one decision:

@@ -102,6 +102,16 @@ Each entry records what happens today, what is deferred, and what would trigger 
 - **Trigger**: a local model that holds up on this task, or a user who will not supply a key.
   `core` does not know Anthropic exists, so it is one crate and one line of `setup.rs`.
 
+## Where the assistant's API key is stored
+- **Today**: one row of `app_settings` in the application's own database, as the user pasted
+  it. The file is private to the application on Android, no command returns the key in full,
+  and `docs/requirements.md` §5.3 says so plainly. A debug install is still readable with
+  `mise run android:db:pull`, which is how the database is meant to be reachable.
+- **Deferred**: the Android Keystore, through `EncryptedSharedPreferences` or a Tauri plugin
+  over it, so the key is not in the database at all.
+- **Trigger**: a second secret worth protecting, a key that is not the user's own to lose,
+  or shipping to anyone but this user.
+
 ## Undoing an applied assistant request
 - **Today**: every applied request is recorded with the operations and, per date, what that
   date pointed at before — by label and by id. That is enough to reverse a change by hand:
