@@ -11,6 +11,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import {
 		dayDelta,
+		isPastDay,
 		operationLabel,
 		recordSummary,
 		reversalHint,
@@ -18,7 +19,7 @@
 	} from '$lib/domain/assistant';
 	import { formatSigned } from '$lib/domain/format';
 	import { MACRO_KEYS, MACRO_LABELS } from '$lib/domain/macros';
-	import { dayMonthLabel, fullDateLabel, weekdayLabel } from '$lib/domain/week';
+	import { dayMonthLabel, fullDateLabel, todayIso, weekdayLabel } from '$lib/domain/week';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -32,7 +33,10 @@
 	// Discard has to leave no trace of it.
 	let preview = $state<Preview | null>(null);
 
-	const summary = $derived(preview ? summarisePreview(preview) : null);
+	// Read once per proposal rather than per render: a day that crosses midnight mid-review
+	// would otherwise change category under the user's cursor.
+	const today = todayIso();
+	const summary = $derived(preview ? summarisePreview(preview, today) : null);
 
 	const examples = [
 		'next 4 days I have 40 g less whey',
@@ -206,6 +210,11 @@
 								days already past included — keeps the original.
 							</p>
 						{/if}
+						{#if isPastDay(day, today)}
+							<p class="small past">
+								This day has already happened. Applying changes what the plan says you ate.
+							</p>
+						{/if}
 					</li>
 				{/each}
 			</ol>
@@ -347,6 +356,12 @@
 		display: inline-block;
 		margin-left: 0.5rem;
 		font-variant-numeric: tabular-nums;
+	}
+
+	/* The one thing on this screen the user cannot undo by planning differently, so it is
+	   the one thing that is not muted. Warning, not danger: nothing is broken. */
+	.past {
+		color: var(--warning);
 	}
 
 	.tight {

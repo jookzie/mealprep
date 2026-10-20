@@ -46,10 +46,24 @@ export function operationLabel(operation: Operation): string {
 	}
 }
 
+/**
+ * Whether a previewed day has already happened.
+ *
+ * The rules refuse a past date unless the request asked for one, so a day flagged here
+ * passed that check — but a request only has to mention yesterday to pass it, and
+ * rewriting a day that was already eaten is not the decision planning a future one is.
+ * Flagged rather than blocked: the confirmation is the right place for it.
+ */
+export function isPastDay(day: PreviewDay, today: IsoDate): boolean {
+	return day.date < today;
+}
+
 export type PreviewSummary = {
 	dayCount: number;
 	/** How many of those days get their own copy of their plan when this is applied. */
 	detachCount: number;
+	/** How many of those days have already happened. */
+	pastCount: number;
 	/** True when the assistant proposed nothing that would change a day. */
 	isEmpty: boolean;
 	dates: IsoDate[];
@@ -57,14 +71,22 @@ export type PreviewSummary = {
 	label: string;
 };
 
-export function summarisePreview(preview: Preview): PreviewSummary {
+export function summarisePreview(preview: Preview, today: IsoDate): PreviewSummary {
 	const dates = preview.days.map((day) => day.date);
 	const dayCount = dates.length;
 	const detachCount = preview.days.filter((day) => day.detaches).length;
+	const pastCount = preview.days.filter((day) => isPastDay(day, today)).length;
 	const days = dayCount === 1 ? 'day' : 'days';
 
-	const label = dayCount === 0 ? 'Nothing would change.' : `${dayCount} ${days} would change.`;
-	return { dayCount, detachCount, isEmpty: dayCount === 0, dates, label };
+	// A past day is named in the line the user reads before pressing Apply, because it is
+	// the one change the copy-on-write cannot make harmless: history is what moves.
+	const label =
+		dayCount === 0
+			? 'Nothing would change.'
+			: pastCount === 0
+				? `${dayCount} ${days} would change.`
+				: `${dayCount} ${days} would change, ${pastCount} already past.`;
+	return { dayCount, detachCount, pastCount, isEmpty: dayCount === 0, dates, label };
 }
 
 /**

@@ -9,6 +9,7 @@ import type {
 } from '../api/types';
 import {
 	dayDelta,
+	isPastDay,
 	joinablePlans,
 	operationLabel,
 	rangeDates,
@@ -106,6 +107,7 @@ describe('summarisePreview', () => {
 	test('counts the days and the ones that get their own copy', () => {
 		const summary = summarisePreview(
 			preview([day('2026-10-20'), day('2026-10-21', { detaches: false })]),
+			'2026-10-20',
 		);
 		expect(summary.dayCount).toBe(2);
 		expect(summary.detachCount).toBe(1);
@@ -115,14 +117,33 @@ describe('summarisePreview', () => {
 	});
 
 	test('one day reads in the singular', () => {
-		expect(summarisePreview(preview([day('2026-10-20')])).label).toBe('1 day would change.');
+		expect(summarisePreview(preview([day('2026-10-20')]), '2026-10-20').label).toBe(
+			'1 day would change.',
+		);
 	});
 
 	test('a proposal that changes nothing says so rather than offering an apply', () => {
-		const summary = summarisePreview(preview([]));
+		const summary = summarisePreview(preview([]), '2026-10-20');
 		expect(summary.isEmpty).toBe(true);
 		expect(summary.dayCount).toBe(0);
 		expect(summary.label).toBe('Nothing would change.');
+	});
+});
+
+describe('past days', () => {
+	test('a day before today is flagged, today and later are not', () => {
+		expect(isPastDay(day('2026-10-19'), '2026-10-20')).toBe(true);
+		expect(isPastDay(day('2026-10-20'), '2026-10-20')).toBe(false);
+		expect(isPastDay(day('2026-10-21'), '2026-10-20')).toBe(false);
+	});
+
+	test('the line above Apply counts them, because that is the change history cannot undo', () => {
+		const summary = summarisePreview(
+			preview([day('2026-10-19'), day('2026-10-20'), day('2026-10-21')]),
+			'2026-10-20',
+		);
+		expect(summary.pastCount).toBe(1);
+		expect(summary.label).toBe('3 days would change, 1 already past.');
 	});
 });
 
