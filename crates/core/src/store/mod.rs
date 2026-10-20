@@ -1,3 +1,4 @@
+mod assistant;
 mod calendar;
 mod catalogue;
 mod category;
@@ -8,6 +9,13 @@ mod targets;
 mod weight;
 
 pub use self::{
-    calendar::CalendarStore, catalogue::Catalogue, category::CategoryStore, day_plan::DayPlanStore,
-    meal::MealStore, product::ProductStore, targets::TargetsStore, weight::WeightStore,
+    assistant::{Assistant, AssistantStore},
+    calendar::CalendarStore,
+    catalogue::Catalogue,
+    category::CategoryStore,
+    day_plan::DayPlanStore,
+    meal::MealStore,
+    product::ProductStore,
+    targets::TargetsStore,
+    weight::WeightStore,
 };

@@ -7,7 +7,7 @@ use crate::{
     store::{Catalogue, ProductStore},
 };
 
-impl<S, C> Mealprep<S, C>
+impl<S, C, A> Mealprep<S, C, A>
 where
     S: ProductStore,
 {
@@ -64,7 +64,7 @@ where
     }
 }
 
-impl<S, C> Mealprep<S, C>
+impl<S, C, A> Mealprep<S, C, A>
 where
     C: Catalogue,
 {

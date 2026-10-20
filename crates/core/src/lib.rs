@@ -34,6 +34,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// The kind of entity an [`Error`] is about.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Entity {
+    AssistantRequest,
     CalendarDay,
     CatalogueEntry,
     Category,
@@ -47,6 +48,7 @@ pub enum Entity {
 impl fmt::Display for Entity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
+            Self::AssistantRequest => "assistant request",
             Self::CalendarDay => "calendar day",
             Self::CatalogueEntry => "catalogue entry",
             Self::Category => "category",

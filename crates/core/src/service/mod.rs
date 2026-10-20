@@ -1,3 +1,4 @@
+mod assistant;
 mod calendar;
 mod category;
 mod day_plan;
@@ -9,4 +10,7 @@ mod targets;
 mod validate;
 mod weight;
 
-pub use self::mealprep::Mealprep;
+pub use self::{
+    assistant::{DayChange, PlannedChange},
+    mealprep::Mealprep,
+};

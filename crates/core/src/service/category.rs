@@ -7,7 +7,7 @@ use crate::{
     store::CategoryStore,
 };
 
-impl<S, C> Mealprep<S, C>
+impl<S, C, A> Mealprep<S, C, A>
 where
     S: CategoryStore,
 {

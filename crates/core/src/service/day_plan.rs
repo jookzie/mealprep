@@ -11,7 +11,7 @@ use crate::{
     store::{CategoryStore, DayPlanStore, MealStore, ProductStore},
 };
 
-impl<S, C> Mealprep<S, C>
+impl<S, C, A> Mealprep<S, C, A>
 where
     S: CategoryStore + DayPlanStore + MealStore + ProductStore,
 {
@@ -54,7 +54,10 @@ where
         })
     }
 
-    async fn resolve_day_plans(&self, plans: Vec<DayPlan>) -> Result<Vec<ResolvedDayPlan>> {
+    pub(super) async fn resolve_day_plans(
+        &self,
+        plans: Vec<DayPlan>,
+    ) -> Result<Vec<ResolvedDayPlan>> {
         let (meal_ids, loose_ids) = derive::item_ids(plans.iter().flat_map(|plan| &plan.items));
         let meals = self.store.list_meals_by_ids(&meal_ids).await?;
 

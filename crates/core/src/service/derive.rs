@@ -80,6 +80,7 @@ pub(super) fn resolve_day_plan(
         id,
         label,
         category_id,
+        source_plan_id,
         items,
         created_at,
         updated_at,
@@ -96,6 +97,7 @@ pub(super) fn resolve_day_plan(
         id,
         label,
         category_id,
+        source_plan_id,
         items,
         macros,
         cost,
@@ -268,6 +270,7 @@ mod tests {
             id: Uuid::new_v4(),
             label: "Rest day".to_owned(),
             category_id: None,
+            source_plan_id: None,
             items: vec![
                 DayPlanItem::Meal {
                     meal_id: breakfast.id,

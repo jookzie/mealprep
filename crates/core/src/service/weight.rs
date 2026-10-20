@@ -22,7 +22,7 @@ const RATE_WINDOW_DAYS: i64 = 14;
 /// number, and a wrong figure here is one someone would act on.
 const MIN_RATE_DAYS: i64 = 7;
 
-impl<S, C> Mealprep<S, C>
+impl<S, C, A> Mealprep<S, C, A>
 where
     S: WeightStore,
 {

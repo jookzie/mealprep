@@ -7,7 +7,7 @@ use crate::{
     store::{CategoryStore, MealStore, ProductStore},
 };
 
-impl<S, C> Mealprep<S, C>
+impl<S, C, A> Mealprep<S, C, A>
 where
     S: CategoryStore + MealStore + ProductStore,
 {
