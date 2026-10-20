@@ -56,7 +56,9 @@ jobs:
               echo "RELEASE_TAG=acceptance-$version+$GITHUB_RUN_NUMBER"
               echo "RELEASE_NAME=Mealprep acceptance $version+$GITHUB_RUN_NUMBER"
               echo "APPLICATION_ID=com.mertan.mealprep.acceptance"
-              echo "APK_NAME=mealprep-acceptance-$version+$GITHUB_RUN_NUMBER.apk"
+              # A dash, not the tag's plus: a `+` in an asset filename survives the
+              # download URL badly in some clients.
+              echo "APK_NAME=mealprep-acceptance-$version-$GITHUB_RUN_NUMBER.apk"
               echo "MEALPREP_VERSION_CODE=$GITHUB_RUN_NUMBER"
               echo "MEALPREP_APPLICATION_ID_SUFFIX=.acceptance"
               echo "MEALPREP_LABEL_SUFFIX=acceptance"
@@ -138,16 +140,19 @@ jobs:
         run: |
           set -euo pipefail
           # Tauri names the output after the ABI flavour it built, so the path follows the
-          # --target it was given; found rather than hardcoded.
+          # --target it was given; found rather than hardcoded. `-quit` rather than a pipe
+          # into head, which would close the pipe under find and trip pipefail.
           apk=$(find src-tauri/gen/android/app/build/outputs/apk \
-            -name '*.apk' ! -name '*unsigned*' -print | head -n 1)
+            -name '*.apk' ! -name '*unsigned*' -print -quit)
           if [ -z "$apk" ]; then
             echo "no APK was produced under src-tauri/gen/android/app/build/outputs/apk" >&2
             exit 1
           fi
           # A release build with no signing config succeeds and yields an APK that cannot
-          # be installed, so the signature is checked here rather than on the phone.
-          if ! unzip -l "$apk" | grep -Eq 'META-INF/.*\.(RSA|EC|DSA)'; then
+          # be installed, so the signature is checked here rather than on the phone. Not
+          # `grep -q`: it would exit before unzip had finished writing, and pipefail would
+          # read that as an unsigned APK.
+          if ! unzip -l "$apk" | grep -E 'META-INF/.*\.(RSA|EC|DSA)' > /dev/null; then
             echo "$apk carries no signature; check the keystore secrets" >&2
             exit 1
           fi
