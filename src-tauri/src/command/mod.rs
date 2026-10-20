@@ -1,3 +1,5 @@
+#[cfg(feature = "acceptance")]
+pub mod acceptance;
 pub mod calendar;
 pub mod category;
 pub mod day_plan;

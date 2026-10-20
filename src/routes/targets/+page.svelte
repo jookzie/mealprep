@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { runMutation, setTargets } from '$lib/api';
+	import { resetDemoData, runMutation, setTargets } from '$lib/api';
 	import NumberField from '$lib/components/NumberField.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { formatKcal } from '$lib/domain/format';
@@ -16,6 +16,7 @@
 	let fatG = $state<number | null>(seed?.fatG ?? null);
 	let carbohydratesG = $state<number | null>(seed?.carbohydratesG ?? null);
 	let busy = $state(false);
+	let confirmingReset = $state(false);
 
 	// Four independent numbers can quietly disagree; saying so informs and blocks nothing.
 	const implied = $derived(
@@ -35,6 +36,18 @@
 		const macros = { energyKcal, proteinG, fatG, carbohydratesG };
 		busy = true;
 		await runMutation(() => setTargets(macros), { success: 'Targets saved' });
+		busy = false;
+	}
+
+	/*
+	 * Acceptance only. The app closes as part of the reset, so there is nothing to
+	 * invalidate and nothing to toast afterwards: runMutation is here for the failure
+	 * path, which is the only path that comes back.
+	 */
+	async function reset() {
+		confirmingReset = false;
+		busy = true;
+		await runMutation(() => resetDemoData(), { invalidate: false });
 		busy = false;
 	}
 </script>
@@ -86,3 +99,35 @@
 		{data.weight.ratePerWeek === undefined ? '' : formatRate(data.weight.ratePerWeek)} →
 	</span>
 </a>
+
+<!--
+	Acceptance builds only: `data.acceptance` is false whenever the reset command is not
+	registered, which is every production build. It sits with the targets because this is
+	the settings-shaped screen, and behind a confirmation because it discards everything.
+-->
+{#if data.acceptance}
+	<section class="card stack">
+		<div>
+			<strong>Acceptance build</strong>
+			<p class="small muted">
+				This install is for trying changes, and its data is separate from the real app's.
+				Resetting replaces everything with the demo dataset and closes the app; reopen it
+				afterwards.
+			</p>
+		</div>
+		<div class="row end">
+			{#if confirmingReset}
+				<button type="button" class="ghost" onclick={() => (confirmingReset = false)}>
+					Cancel
+				</button>
+				<button type="button" class="danger" disabled={busy} onclick={reset}>
+					Discard and reset
+				</button>
+			{:else}
+				<button type="button" disabled={busy} onclick={() => (confirmingReset = true)}>
+					Reset to demo data
+				</button>
+			{/if}
+		</div>
+	</section>
+{/if}

@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::PathBuf};
 
 use mealprep_core::service::Mealprep;
 use mealprep_openfoodfacts::OpenFoodFacts;
@@ -16,8 +16,8 @@ pub type AppState = Mealprep<SqliteStore, OpenFoodFacts>;
 
 const DATABASE_FILE: &str = "mealprep.db";
 
-/// Opens the database in the application's data directory, creating both when missing.
-pub async fn open(app: &AppHandle<impl Runtime>) -> Result<AppState, SetupError> {
+/// Where the database lives, creating the application's data directory when missing.
+pub fn database_path(app: &AppHandle<impl Runtime>) -> Result<PathBuf, SetupError> {
     let directory =
         app.path()
             .app_data_dir()
@@ -28,8 +28,23 @@ pub async fn open(app: &AppHandle<impl Runtime>) -> Result<AppState, SetupError>
         path: directory.clone(),
         source,
     })?;
+    Ok(directory.join(DATABASE_FILE))
+}
 
-    let store = SqliteStore::open(&directory.join(DATABASE_FILE)).await?;
+/// Opens the database in the application's data directory, creating both when missing.
+pub async fn open(app: &AppHandle<impl Runtime>) -> Result<AppState, SetupError> {
+    let path = database_path(app)?;
+
+    // The acceptance environment starts from the demo dataset rather than from an empty
+    // database, so a fresh install has something to look at. Before the open, because
+    // `SqliteStore::open` creates the file it does not find.
+    #[cfg(feature = "acceptance")]
+    crate::acceptance::seed(&path).map_err(|source| SetupError::SeedDemoDatabase {
+        path: path.clone(),
+        source,
+    })?;
+
+    let store = SqliteStore::open(&path).await?;
     let catalogue = OpenFoodFacts::new()?;
     Ok(Mealprep::new(store, catalogue))
 }
