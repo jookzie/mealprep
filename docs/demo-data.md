@@ -17,7 +17,7 @@ On desktop, stop the app and copy it over `mealprep.db` in the app data director
 (`~/.local/share/com.mertan.mealprep/` on Linux). Either way it replaces the data that was
 there; `android:db:push` saves that first, a desktop copy does not.
 
-The checked-in file was built around **2026-09-27**. The calendar opens on the current
+The checked-in file was built around **2026-10-20**. The calendar opens on the current
 week and the weight trend reads "now", so once that date has passed the calendar starts
 empty and the chart ends in the past: rebuild it before using it, and commit the rebuild
 only when the data itself changed.
@@ -54,7 +54,7 @@ only when the data itself changed.
 | Uncategorised | Leftovers, Travel day | No category |
 | Meal in a removed category | Sweet potato soup | "Seasonal", deleted |
 | Serving of a removed product | Protein bar and apple | Protein bar, deleted |
-| Day plan: meals and loose products in one order | Training day A | Four meals, a banana and chocolate between and after them |
+| Day plan: meals and loose products in one order | Training day A | Four meals, with a banana, a scoop of whey and chocolate between and after them |
 | Day plan: loose products only | Travel day | Six products, no meals |
 | Deleted meal drops out of a plan | Lazy Sunday | "Old smoothie" was its second item |
 | Deleted product stays as removed | Lazy Sunday | Protein bar, 60 g |
@@ -66,9 +66,21 @@ only when the data itself changed.
 | Date whose plan was deleted | Calendar, tomorrow | "Old cutting plan", deleted; reads as unplanned |
 | Weight trend and rate | Targets → Weight | Ten weeks ending today, losing about 0.4 kg a week |
 | Skipped weigh-ins | Weight chart | Every few days, and ten days away with no scale |
+| Assistant with no key: the empty state | Assistant | No key is seeded, so the screen asks for one and says what would leave the device |
+| A product an assistant request can adjust | Training day A and B | 60 g of whey as an item of the day's own order, not inside a meal |
+| An applied assistant request | Assistant → History | "the next few training days I have 40 g less whey", three days changed |
+| The log is enough to undo by hand | Assistant → History → the entry | Each date says what it pointed at before, by label and id |
+| Copy-on-write per date | Calendar, the next few training days | Three days on their own copy of Training day A, with 20 g of whey |
+| The past is unmoved by an edit ahead | Calendar, the training days already past | Still on the original Training day A, with its 60 g |
+| Day-local copies stay out of the lists | Day plans, and the assign dialog | Six plans; the three copies appear in neither |
 
 The catalogue itself is not seeded: search, barcode lookup and the import review read Open
 Food Facts live, so they need a network and not this file.
+
+No API key is seeded either, so the assistant shows its empty state and sends nothing. The
+one applied request in the file was applied rather than proposed — applying needs no key,
+proposing does — so the states it leaves behind are all there to look at, and asking a new
+question needs a key of your own.
 
 ## Keeping it current
 A feature that adds an entity, a field or a state worth seeing is not finished until the

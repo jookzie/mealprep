@@ -35,8 +35,9 @@ Each entry records what happens today, what is deferred, and what would trigger 
 - **Trigger**: a second store existing at all.
 
 ## A cloud database and sync
-- **Today**: one SQLite file on the device. Nothing synchronises, and the security section of
-  the SRS rests on the data never leaving.
+- **Today**: one SQLite file on the device, and nothing synchronises. The security section of
+  the SRS rests on the database never leaving: the assistant sends a view of the plan when
+  asked, which is a question about the data rather than a copy of it.
 - **Deferred**: a crate implementing the `core::store` traits against Postgres, and a sync
   design for reconciling two stores.
 - **Trigger**: wanting the same data on a second device.
@@ -88,6 +89,60 @@ Each entry records what happens today, what is deferred, and what would trigger 
   the dataset and sits against `docs/requirements.md` "One user, one device, one dataset.
   Nothing synchronises."
 - **Trigger**: wanting the data to survive the device, or a second device at all.
+
+## An assistant that runs on the device
+- **Today**: the assistant is `crates/anthropic`, which sends the request and a compact view
+  of the plan to Claude Sonnet over HTTPS with the user's own API key. That is the one thing
+  in the app that sends the user's data anywhere, and `docs/requirements.md` §5.3 says what.
+- **Deferred**: a crate implementing `core::store::Assistant` against a model small enough to
+  run on the phone, which would take the network — and the key, and §5.3 — back out. It was
+  judged and rejected rather than overlooked: resolving one sentence onto several typed edits
+  over real ids and amounts, all of them right or refused, is not what a phone-sized model is
+  reliable at, and the failure mode is a plausible edit naming the wrong product.
+- **Trigger**: a local model that holds up on this task, or a user who will not supply a key.
+  `core` does not know Anthropic exists, so it is one crate and one line of `setup.rs`.
+
+## Undoing an applied assistant request
+- **Today**: every applied request is recorded with the operations and, per date, what that
+  date pointed at before — by label and by id. That is enough to reverse a change by hand:
+  assign the previous plan to the date again, or clear the date when it had none. The screen
+  shows that line beside each change.
+- **Deferred**: an undo command that does it in one tap. The record already holds everything
+  it needs; what is missing is the decision about what undoing a request that was partly
+  overwritten since should do, and what to do with the day-local copies it leaves behind.
+- **Trigger**: reversing one by hand often enough to want the button, or a request that goes
+  wrong in a way the log reads clearly but is tedious to put back.
+
+## A conversation with the assistant
+- **Today**: one request, one proposal. The request carries no history, and the model is
+  given the plan rather than the last thing it said. A correction to a proposal is a fresh
+  request, which keeps every proposal checkable on its own.
+- **Deferred**: multi-turn — "no, only the first two days" — which means keeping the turns,
+  sending them back, and deciding what a proposal means when it refers to an earlier one.
+- **Trigger**: wanting to narrow a proposal rather than retype the request. The cost to watch
+  is that a preview is currently about exactly one sentence, which is what makes it readable.
+
+## Further assistant operations
+- **Today**: six operations — adjust a loose product's amount, add an item, remove an item,
+  swap a meal, assign a plan, clear a plan. Each is bounded to the dates it names.
+- **Deferred**: the ones that need a rule rather than a field. Scaling a whole day towards a
+  target has to decide what to scale and by how much. Adjusting a product that is inside a
+  meal needs a decision about whether the meal is copied for that day, as the plan is. Moving
+  a day's plan to another date needs to say what happens to the date it came from.
+- **Trigger**: a correction that cannot be said with the six. Adding one that reduces to an
+  existing day change costs a variant on `Operation`, an arm of the resolver and a tool
+  schema; the preview, the confirmation and the writes are untouched.
+
+## A transaction across the store traits
+- **Today**: `apply_assistant_edit` checks every operation against the real data before it
+  writes anything, so a proposal that no longer fits fails having touched nothing. The writes
+  themselves are one store call per date, and nothing wraps them: a failure part-way through
+  — a full disk, a closed database — leaves the earlier dates applied, and the log then
+  records only what the call had reached.
+- **Deferred**: a unit of work on `core::store` that an implementation maps to a transaction,
+  so a multi-date write commits or rolls back as one.
+- **Trigger**: a partial apply actually happening, or a second store whose writes are slower
+  and likelier to be interrupted.
 
 ## Closed by the port
 Deferred decisions the predecessor carried that this version answers.

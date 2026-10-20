@@ -18,12 +18,14 @@ protein and carbohydrates — and see what the plan costs.
 Mealprep is a single application that runs entirely on the user's device: a webview frontend,
 the business rules and the database in one process, with no server and no network service.
 It covers configuring products, composing meals from them, grouping meals and products into
-day plans, assigning day plans to calendar days, recording body weight, and reporting
-nutrients and cost against targets. It does not cover shopping lists, recipes with
-instructions, multiple users or sharing.
+day plans, assigning day plans to calendar days, recording body weight, reporting nutrients
+and cost against targets, and correcting a plan by describing the change in plain language.
+It does not cover shopping lists, recipes with instructions, multiple users or sharing.
 
 Cost tracking was excluded by the predecessor and is now in scope (§4.6). Categories for
-meals and day plans are new (§4.5), as is weight tracking (§4.10).
+meals and day plans are new (§4.5), as is weight tracking (§4.10) and the planning
+assistant (§4.12). The assistant is the first feature that sends any of the user's data off
+the device, and it does so only with a key the user supplies; §5.3 says what is sent.
 
 ### 1.3 Document conventions
 Requirements are identified as `XX-n` (`PR-1`, `ML-2`) and are binding. Priority is stated
@@ -47,6 +49,11 @@ Section 4 for what to build, Sections 3 and 5 for the constraints around it.
 - **Trend** — the exponentially smoothed average of the weigh-ins, which is the figure to read rather than the last measurement.
 - **OFF** — [Open Food Facts](https://world.openfoodfacts.org/), the external product database.
 - **Catalogue** — OFF as the application sees it, behind the `Catalogue` trait.
+- **Assistant** — what turns a plain-language request into typed operations, behind the `Assistant` trait. Claude, reached over HTTPS with the user's own API key.
+- **Operation** — one typed edit the assistant may propose, bounded to the dates it acts on. The set is closed, and the application rather than the model decides what each one means.
+- **Proposal** — what the assistant answered: operations and a short rationale. Unchecked, and never applied without a confirmation.
+- **Preview** — a checked proposal: which dates would change, what changes on each, and where that leaves the day against the targets.
+- **Day-local copy** — one date's own copy of a day plan, made so that editing that date cannot move every other date assigned the same plan. It carries `source_plan_id`, and appears in no list and no picker.
 - **SRS** — this document.
 
 ### 1.6 References
@@ -72,6 +79,7 @@ carried over. See `docs/architecture.md` for the component diagram.
 - Assign day plans to calendar days.
 - Set daily macro targets and see planned nutrients and cost against them.
 - Record body weight and read its smoothed trend and rate of change.
+- Correct the plan by describing the change — "next 4 days I have 40 g less whey" — and confirming the edit the assistant proposes.
 
 ### 2.3 User classes and characteristics
 One class, the single user, who both configures products and plans meals. No roles, no
@@ -130,6 +138,7 @@ Nutrients are shown as the four macros, with the full nutrient set behind an exp
 | Calendar | `/calendar` | `CL-1`–`CL-5`, `TG-2`, `TG-3` |
 | Targets | `/targets` | `TG-1`, `WT-6` — the macro targets, and the weight trend beside them |
 | Weight | `/weight` | `WT-1`–`WT-7` — quick log, the graph, and the weigh-in history |
+| Assistant | `/assistant` | `AS-1`–`AS-9` — the request, the preview with Apply or Discard, the API key, and what has been applied |
 
 Creating and editing are screens rather than dialogs, because every write replaces the whole
 entity and so has to start from a fresh read. Dialogs carry what is genuinely one decision:
@@ -163,13 +172,16 @@ The device camera, on phones only, for barcode scanning (`SC-1`). Nothing else.
 
 ### 3.3 Software interfaces
 - **Open Food Facts REST API** — read-only, over rustls with webpki roots. Search by text and fetch by barcode, behind the `Catalogue` trait.
+- **Anthropic Messages API** — one request per question the user asks, over rustls with webpki roots, authenticated with the key the user pasted in, behind the `Assistant` trait. One tool per kind of operation, so the answer is tool calls rather than prose. §5.3 says what the request carries.
 - **SQLite** — a local file, reached only through `mealprep-sqlite`.
 - **Barcode scanner** — `tauri-plugin-barcode-scanner`, on Android and iOS only.
 
 ### 3.4 Communications interfaces
 Between the frontend and the rules there is no network protocol: the webview invokes Tauri
 commands over the IPC bridge, and arguments and results are JSON-serialised domain types.
-The only outbound traffic is HTTPS to the OFF API. The application listens on no port.
+The outbound traffic is HTTPS to the OFF API, and — only while the user has stored an API
+key, and only when they ask a question — HTTPS to the Anthropic Messages API. The
+application listens on no port.
 
 ## 4. System features
 Features are ordered by the dependency between their domains: products come first, meals
@@ -300,6 +312,27 @@ version.
 - `PL-1` The system shall check a product's figures against each other as they are entered — energy against the macros, kJ against kcal, saturates against fat, sugars against carbohydrates, and the total against 100 g.
 - `PL-2` A failed check shall warn and shall never block a save, consistent with `TG-3`.
 
+### 4.12 Planning assistant
+**Description and priority.** Correcting a plan by describing the change. Medium. New in
+this version.
+
+**Stimulus/response.** The user writes what changed — "next 4 days I have 40 g less whey".
+The application sends that and a compact view of the plan to the assistant, which answers
+with typed operations. The application checks every one against the stored data and shows
+what would change on each date. The user applies it, or discards it.
+
+**Functional requirements.**
+- `AS-1` The system shall let the user describe a correction to their planning in plain language.
+- `AS-2` The system shall turn a request into operations drawn from a closed, typed set, and the assistant shall never write to the database. It proposes; the application applies.
+- `AS-3` The system shall check every proposed operation against the stored data — the product, meal or plan it names, the amount it would leave, the dates it covers — and shall refuse the request rather than silently adjust it.
+- `AS-4` The system shall show a preview before anything is written: which dates would change, what changes on each, and the resulting macros against the targets, consistent with `TG-3`.
+- `AS-5` The system shall write nothing without an explicit confirmation, shall offer discarding as an equal choice, and shall check the confirmed operations again before applying them.
+- `AS-6` An operation bounded to dates shall change only those dates. Each shall be detached onto its own copy of its assigned day plan before being edited, so no other date assigned the same plan moves; a day-local copy shall not appear in the day plan list or in any picker.
+- `AS-7` The system shall refuse to change a date before today unless the request explicitly and unambiguously names a past day.
+- `AS-8` The system shall record every applied request — what was asked, what the assistant said, the operations, what each date pointed at before, and when — and shall show it. The record shall be enough to reverse the change by hand.
+- `AS-9` The system shall require the user's own API key for the assistant, shall keep it on the device, shall never return it in full, and shall send nothing to the assistant while there is none.
+- `AS-10` Adding a kind of operation shall not change how a proposal is previewed, confirmed or applied.
+
 ## 5. Other non-functional requirements
 
 ### 5.1 Performance requirements
@@ -311,10 +344,46 @@ None. The application gives no medical or dietary advice and enforces nothing, p
 and `PL-2`.
 
 ### 5.3 Security requirements
-No authentication and no transport security for the application itself, because it listens on
-nothing and its data never leaves the device. The one outbound connection, to the OFF API, is
-HTTPS with webpki roots. Giving this application a network service, or synchronising its
-database anywhere, invalidates this section and requires it to be rewritten first.
+The application has no authentication and no transport security of its own: it listens on no
+port and accepts no connection, so there is nothing to authenticate. Its database is a
+private file in the platform's app data directory, and nothing in the application copies it
+anywhere.
+
+Two features reach outward, both as HTTPS clients over rustls with webpki roots, and both
+only when the user asks.
+
+**Open Food Facts (§4.1, §4.7).** A search term or a barcode goes out and a catalogue entry
+comes back. None of the user's own data is sent.
+
+**The planning assistant (§4.12).** This is the one feature that sends the user's own data
+off the device. It is off until the user turns it on by supplying an API key.
+
+- *What is sent, per question asked:* the request the user typed, and a compact view of the
+  plan around today — the dates in the assistant's window with the labels and amounts on
+  them, the names and ids of their day plans, meals and products, and their macro targets.
+- *What is not sent:* the database, the weigh-ins, the prices, the record of applied
+  requests, any identifier of the device or the installation, and anything about dates
+  outside that window.
+- *Where the key lives:* one row of `app_settings` in the same local database, stored as the
+  user pasted it, and read only to be put in the `x-api-key` header of that one request. No
+  command returns it in full: the frontend is given a flag and the last four characters, so
+  the user can tell which key is stored without the application handing it back.
+- *How it is switched on and off:* by storing the key, and by forgetting it. With no key
+  stored the assistant sends nothing at all — the application does not reach the model to
+  find out whether it would have worked. The screen says what will leave the device before
+  the key is entered rather than after.
+- *What is trusted:* nothing the model answers. It proposes typed operations, which are
+  checked against the stored data and applied only on the user's confirmation (`AS-2`,
+  `AS-3`, `AS-5`), so a wrong or hostile answer cannot write anything the user has not read
+  first.
+
+What happens to the data at the other end is governed by Anthropic's terms, not by this
+document. Sending plan context to a third party is a trade the user makes per installation,
+by choosing to store a key.
+
+Giving this application a network service, synchronising its database anywhere, or sending
+any further part of it outward invalidates this section and requires it to be rewritten
+first.
 
 ### 5.4 Software quality attributes
 - **Maintainability** — `docs/code-standards.md` is binding; the tree stays formatted and lint-clean.
@@ -324,8 +393,10 @@ database anywhere, invalidates this section and requires it to be rewritten firs
 
 ### 5.5 Logical database requirements
 The database stores products with their full nutrient set and optional price, categories,
-meals with their servings, day plans with their ordered items, calendar assignments, weigh-ins
-and targets. Nutrient and cost totals are never stored; they are derived on read. Every table
+meals with their servings, day plans with their ordered items — the day-local copies the
+assistant makes included, marked by `source_plan_id` — calendar assignments, weigh-ins,
+targets, the applied assistant requests, and the settings the user supplies, of which the
+assistant's API key is the only one. Nutrient and cost totals are never stored; they are derived on read. Every table
 carries `created_at`, `updated_at` and `deleted_at`; a delete sets `deleted_at` and removes no
 row, and reads exclude soft-deleted rows. The schema is `crates/sqlite/migrations/`, applied
 on open — which closes the predecessor's TBD-12 and its hand-run `ALTER TABLE`s.
@@ -336,6 +407,8 @@ on open — which closes the predecessor's TBD-12 and its hand-run `ALTER TABLE`
 - Nothing is deleted outright; entities are soft-deleted (5.5).
 - A derived figure never hides what it is missing (`CO-3`).
 - The trend is the figure worth reading; a single weigh-in is mostly noise (`WT-5`).
+- The assistant proposes and the application applies; nothing a model answers is written unreviewed (`AS-2`, `AS-5`).
+- An edit bounded to dates never moves a date it did not name, and never moves the past (`AS-6`, `AS-7`).
 
 ## 6. Other requirements
 Open Food Facts data is published under the Open Database License (ODbL), with its individual
