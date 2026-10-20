@@ -40,6 +40,13 @@ jobs:
             # Production. No id suffix and no label suffix: the install on the phone keeps
             # its id, and the version code is offset a million above the acceptance series
             # so a production code can never land below one already installed.
+            # The APK's versionName comes from tauri.conf.json, so a tag that disagrees
+            # with it would publish a release whose name is not the version installed.
+            if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+              echo "tag $GITHUB_REF_NAME does not match the $version in src-tauri/tauri.conf.json." >&2
+              echo "Bump the config first, commit it, then tag that number." >&2
+              exit 1
+            fi
             {
               echo "ENVIRONMENT=production"
               echo "RELEASE_TAG=$GITHUB_REF_NAME"
@@ -53,11 +60,12 @@ jobs:
             # directory and it can neither see nor replace the production database.
             {
               echo "ENVIRONMENT=acceptance"
-              echo "RELEASE_TAG=acceptance-$version+$GITHUB_RUN_NUMBER"
-              echo "RELEASE_NAME=Mealprep acceptance $version+$GITHUB_RUN_NUMBER"
+              # Dashes throughout. A `+` is legal in a refname and in a release title,
+              # but it is the URL escape for a space, so it survives a download link
+              # and a client that re-encodes one badly.
+              echo "RELEASE_TAG=acceptance-$version-$GITHUB_RUN_NUMBER"
+              echo "RELEASE_NAME=Mealprep acceptance $version-$GITHUB_RUN_NUMBER"
               echo "APPLICATION_ID=com.mertan.mealprep.acceptance"
-              # A dash, not the tag's plus: a `+` in an asset filename survives the
-              # download URL badly in some clients.
               echo "APK_NAME=mealprep-acceptance-$version-$GITHUB_RUN_NUMBER.apk"
               echo "MEALPREP_VERSION_CODE=$GITHUB_RUN_NUMBER"
               echo "MEALPREP_APPLICATION_ID_SUFFIX=.acceptance"
@@ -149,13 +157,18 @@ jobs:
             exit 1
           fi
           # A release build with no signing config succeeds and yields an APK that cannot
-          # be installed, so the signature is checked here rather than on the phone. Not
-          # `grep -q`: it would exit before unzip had finished writing, and pipefail would
-          # read that as an unsigned APK.
-          if ! unzip -l "$apk" | grep -E 'META-INF/.*\.(RSA|EC|DSA)' > /dev/null; then
-            echo "$apk carries no signature; check the keystore secrets" >&2
+          # be installed, so the signature is verified here rather than on the phone.
+          #
+          # apksigner rather than a look for META-INF/*.RSA: minSdk is 24, and above 23
+          # the Gradle plugin signs with the v2/v3 schemes only. Those live in the APK's
+          # signing block and leave no certificate file behind, so a META-INF probe would
+          # reject every correctly signed APK this workflow builds.
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          if [ -z "$apksigner" ]; then
+            echo "no apksigner under $ANDROID_HOME/build-tools" >&2
             exit 1
           fi
+          "$apksigner" verify --print-certs "$apk"
           mv "$apk" "$RUNNER_TEMP/$APK_NAME"
           echo "APK_PATH=$RUNNER_TEMP/$APK_NAME" >> "$GITHUB_ENV"
 

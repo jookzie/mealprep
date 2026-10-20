@@ -10,7 +10,7 @@ Store listing and no in-app updater: Tauri's updater does not support Android.
 | Launcher label | Mealprep | Mealprep acceptance |
 | Data | the real database, kept across updates | its own private directory, seeded with `demo/mealprep-demo.db` on first launch |
 | Trigger | pushing a tag `v*` | pushing to `main`, or Run workflow |
-| Published as | a release, tagged `v<version>` | a prerelease, tagged `acceptance-<version>+<run number>` |
+| Published as | a release, tagged `v<version>` | a prerelease, tagged `acceptance-<version>-<run number>` |
 | versionCode | `1000000 + run number` | `run number` |
 
 Both are arm64, both are signed with the same keystore, and both install at once: Android
@@ -59,6 +59,10 @@ That is all of it; everything else is a push.
 git tag v0.2.0
 git push origin v0.2.0
 ```
+
+The tag has to match the version in the config: the APK's `versionName` is read from
+`tauri.conf.json`, so the workflow refuses a tag that disagrees with it rather than
+publishing a release whose name is not what installs.
 
 The workflow signs the APK, attaches it to a release named `Mealprep 0.2.0`, and Obtainium
 offers it on its next check. Pushing to `main` needs nothing: the acceptance prerelease is
