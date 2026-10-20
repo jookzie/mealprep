@@ -105,3 +105,15 @@ export const loadAssistantKeyStatus = () => call<AssistantKeyStatus>('assistant_
 export const setAssistantKey = (key: string) =>
 	call<AssistantKeyStatus>('set_assistant_key', { key });
 export const clearAssistantKey = () => call<void>('clear_assistant_key');
+/*
+ * The acceptance environment. One frontend bundle serves both environments, so it cannot
+ * be compiled against the Rust `acceptance` feature; it asks whether the command is there
+ * instead. A production build registers neither of these and rejects the call, which is
+ * the answer "no".
+ */
+export const isAcceptanceBuild = () => call<boolean>('acceptance_build').catch(() => false);
+/**
+ * Puts the demo dataset back and closes the app, which has to be reopened to read it.
+ * The promise never settles on success, because the process is gone before it can.
+ */
+export const resetDemoData = () => call<void>('reset_demo_data');

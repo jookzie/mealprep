@@ -1,5 +1,7 @@
 //! The Mealprep application: Tauri commands over the business rules, stored on the device.
 
+#[cfg(feature = "acceptance")]
+mod acceptance;
 mod command;
 mod error;
 mod result;
@@ -20,6 +22,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            #[cfg(feature = "acceptance")]
+            command::acceptance::acceptance_build,
+            #[cfg(feature = "acceptance")]
+            command::acceptance::reset_demo_data,
             command::assistant::apply_assistant_edit,
             command::assistant::assistant_key_status,
             command::assistant::clear_assistant_key,

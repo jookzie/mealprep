@@ -48,6 +48,10 @@ pub enum SetupError {
     #[error("cannot create {path}: {source}")]
     CreateDataDirectory { path: PathBuf, source: io::Error },
 
+    #[cfg(feature = "acceptance")]
+    #[error("cannot seed the demo database at {path}: {source}")]
+    SeedDemoDatabase { path: PathBuf, source: io::Error },
+
     #[error(transparent)]
     Mealprep(#[from] CoreError),
 }

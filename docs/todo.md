@@ -153,6 +153,48 @@ Each entry records what happens today, what is deferred, and what would trigger 
   so a multi-date write commits or rolls back as one.
 - **Trigger**: a partial apply actually happening, or a second store whose writes are slower
   and likelier to be interrupted.
+## A Play Store internal testing track
+- **Today**: the signed APK is attached to a GitHub Release and Obtainium installs it, for
+  both environments. Nothing is uploaded anywhere, and the acceptance build is a second
+  application id rather than a track.
+- **Deferred**: a Play Console account, an app signing key held by Google, and the internal
+  testing track as the acceptance channel.
+- **Trigger**: wanting someone other than the author to install the app, which is when
+  sideloading an APK stops being a reasonable thing to ask of a tester.
+
+## An in-app updater
+- **Today**: Obtainium checks GitHub Releases and installs the APK. The app itself knows
+  nothing about versions and never asks about one.
+- **Deferred**: an update check inside the app. Tauri's own updater does not support
+  Android, so this would be hand-written against the releases API plus a package installer
+  intent.
+- **Trigger**: Tauri's updater gaining Android support, or updates being missed often
+  enough to be worth the first outbound connection the app makes about itself.
+
+## Releasing to iOS
+- **Today**: the release workflow builds an arm64 Android APK and nothing else. There is no
+  iOS project at all — see **iOS** above for the build side of that.
+- **Deferred**: a macOS runner, a signing identity and a provisioning profile, and
+  TestFlight in place of Obtainium, which does not exist on iOS.
+- **Trigger**: an iOS build existing locally first.
+
+## A smoke test before a release is published
+- **Today**: `check.yml` runs the unit and integration suites, and
+  `crates/sqlite/tests/upgrade.rs` migrates a database an older build wrote. Nothing starts
+  the built APK: a release is published on the strength of the build succeeding and the
+  signature being present.
+- **Deferred**: booting an emulator in the release job, installing the APK, and asserting
+  the app reaches its first screen — the trigger the **End-to-end tests** entry above
+  already names, now that there is a release process to hang it on.
+- **Trigger**: a release that installs and then fails on launch, which no test here would
+  have caught.
+
+## Desktop bundles in CI
+- **Today**: `release.yml` builds Android only. The desktop build is what `mise run dev`
+  produces locally, and the frontend's contract is checked on Linux in `check.yml`.
+- **Deferred**: building the Linux, macOS and Windows bundles in the release job and
+  attaching them too, which needs a runner per platform.
+- **Trigger**: using the app on a desktop for more than development.
 
 ## Closed by the port
 Deferred decisions the predecessor carried that this version answers.

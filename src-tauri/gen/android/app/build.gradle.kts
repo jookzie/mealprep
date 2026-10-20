@@ -24,15 +24,51 @@ val keystoreProperties = Properties().apply {
     }
 }
 
+/*
+ * CI builds two release environments out of these same sources — production and
+ * acceptance — and they differ only in application id, launcher label and version
+ * code. All three come from the environment so that an empty environment is exactly
+ * the production build this file has always described: `mise run android:build:release`
+ * is unchanged, and nothing about the install on the phone moves.
+ *
+ * The application id is what keeps them apart. Android gives every id its own private
+ * data directory, so the acceptance install cannot see production's database even by
+ * accident, and the two coexist. Production's id must therefore never pick up a suffix:
+ * a changed id (like a changed signing key) is a different app, and installing it means
+ * uninstalling the old one, which deletes the database.
+ *
+ * versionCode scheme, set by the release workflow from its run number:
+ *
+ *     production   1_000_000 + run_number
+ *     acceptance               run_number
+ *
+ * Run numbers only ever increase, so each environment's series is monotonic — Android
+ * refuses an update whose code went backwards — and the production offset keeps a
+ * production code above every acceptance code that will plausibly be built, so the two
+ * series can never be confused for one another. Unset, versionCode falls back to
+ * tauri.properties as before, which is what local builds use.
+ */
+val releaseApplicationIdSuffix: String? = System.getenv("MEALPREP_APPLICATION_ID_SUFFIX")
+val releaseLabelSuffix: String? = System.getenv("MEALPREP_LABEL_SUFFIX")
+val releaseVersionCode: Int? = System.getenv("MEALPREP_VERSION_CODE")?.toInt()
+
+// Gradle cannot append to a string resource, so a suffixed label is assembled here from
+// the same word strings.xml holds, joined to the suffix by a space. Without a suffix the
+// placeholders stay the resource references the manifest carried before.
+val appLabel = "Mealprep"
+
 android {
     compileSdk = 36
     namespace = "com.mertan.mealprep"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
+        manifestPlaceholders["appLabel"] = "@string/app_name"
+        manifestPlaceholders["activityLabel"] = "@string/main_activity_title"
         applicationId = "com.mertan.mealprep"
         minSdk = 24
         targetSdk = 36
-        versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
+        versionCode = releaseVersionCode
+            ?: tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
     signingConfigs {
@@ -59,6 +95,12 @@ android {
             }
         }
         getByName("release") {
+            // Absent variables leave this block exactly as it was: the production install.
+            releaseApplicationIdSuffix?.let { applicationIdSuffix = it }
+            releaseLabelSuffix?.let {
+                manifestPlaceholders["appLabel"] = "$appLabel $it"
+                manifestPlaceholders["activityLabel"] = "$appLabel $it"
+            }
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             proguardFiles(
