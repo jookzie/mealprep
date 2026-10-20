@@ -52,9 +52,9 @@ val releaseApplicationIdSuffix: String? = System.getenv("MEALPREP_APPLICATION_ID
 val releaseLabelSuffix: String? = System.getenv("MEALPREP_LABEL_SUFFIX")
 val releaseVersionCode: Int? = System.getenv("MEALPREP_VERSION_CODE")?.toInt()
 
-// Gradle cannot append to a string resource, so a suffixed label is assembled from the
-// same word strings.xml holds. Without a suffix the placeholders stay the resource
-// references the manifest carried before.
+// Gradle cannot append to a string resource, so a suffixed label is assembled here from
+// the same word strings.xml holds, joined to the suffix by a space. Without a suffix the
+// placeholders stay the resource references the manifest carried before.
 val appLabel = "Mealprep"
 
 android {
@@ -98,8 +98,8 @@ android {
             // Absent variables leave this block exactly as it was: the production install.
             releaseApplicationIdSuffix?.let { applicationIdSuffix = it }
             releaseLabelSuffix?.let {
-                manifestPlaceholders["appLabel"] = appLabel + it
-                manifestPlaceholders["activityLabel"] = appLabel + it
+                manifestPlaceholders["appLabel"] = "$appLabel $it"
+                manifestPlaceholders["activityLabel"] = "$appLabel $it"
             }
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true

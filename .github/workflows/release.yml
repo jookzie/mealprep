@@ -1,0 +1,182 @@
+name: release
+
+# Two environments out of one workflow; docs/release.md is the short version of all of it.
+#
+#   tag v*            production, com.mertan.mealprep, published as a release
+#   push to main      acceptance, com.mertan.mealprep.acceptance, published as a prerelease
+#   workflow_dispatch acceptance, on demand
+#
+# Both are signed with the one release keystore, held as repository secrets. A different
+# key cannot update an existing install: Android refuses it, the only way in is to
+# uninstall first, and an uninstall takes the database with it. The signing key and the
+# application id are therefore fixed for the life of the install.
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Never cancelled: a half-published release is worse than a queued one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve the release environment
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Production. No id suffix and no label suffix: the install on the phone keeps
+            # its id, and the version code is offset a million above the acceptance series
+            # so a production code can never land below one already installed.
+            {
+              echo "ENVIRONMENT=production"
+              echo "RELEASE_TAG=$GITHUB_REF_NAME"
+              echo "RELEASE_NAME=Mealprep ${GITHUB_REF_NAME#v}"
+              echo "APPLICATION_ID=com.mertan.mealprep"
+              echo "APK_NAME=mealprep-${GITHUB_REF_NAME#v}.apk"
+              echo "MEALPREP_VERSION_CODE=$((1000000 + GITHUB_RUN_NUMBER))"
+            } >> "$GITHUB_ENV"
+          else
+            # Acceptance. Its own application id, so Android gives it its own private data
+            # directory and it can neither see nor replace the production database.
+            {
+              echo "ENVIRONMENT=acceptance"
+              echo "RELEASE_TAG=acceptance-$version+$GITHUB_RUN_NUMBER"
+              echo "RELEASE_NAME=Mealprep acceptance $version+$GITHUB_RUN_NUMBER"
+              echo "APPLICATION_ID=com.mertan.mealprep.acceptance"
+              echo "APK_NAME=mealprep-acceptance-$version+$GITHUB_RUN_NUMBER.apk"
+              echo "MEALPREP_VERSION_CODE=$GITHUB_RUN_NUMBER"
+              echo "MEALPREP_APPLICATION_ID_SUFFIX=.acceptance"
+              echo "MEALPREP_LABEL_SUFFIX=acceptance"
+            } >> "$GITHUB_ENV"
+          fi
+
+      # Pinned to 21. A newer JDK fails this project's Gradle buildSrc, which is what the
+      # local toolchain pin exists for too; the runner's default JDK is not it.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v4
+
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          # Pinned: the NDK is the C toolchain the Rust target links against, and letting
+          # it drift changes the binary without changing the commit.
+          ndk-version: r27c
+          local-cache: true
+
+      - uses: jdx/mise-action@v5
+
+      - name: Install the Rust toolchain and the Android target
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          # arm64 only: the phone is the only release target, and the other three ABIs
+          # would quadruple the build for nothing.
+          rustup target add aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android-aarch64
+
+      - run: bun install --frozen-lockfile
+
+      - name: Write the signing configuration
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 is not set, so the APK would build unsigned." >&2
+            echo "See docs/release.md for the four secrets this workflow needs." >&2
+            exit 1
+          fi
+          keystore="$RUNNER_TEMP/release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$keystore"
+          # Written with printf rather than a heredoc so a password is never read as shell.
+          {
+            printf 'storeFile=%s\n' "$keystore"
+            printf 'storePassword=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$KEY_PASSWORD"
+          } > src-tauri/gen/android/keystore.properties
+
+      - name: Build the signed arm64 release APK
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          # The tauri CLI directly rather than `mise run android:build:release`: that task
+          # is the local path and takes neither a cargo feature nor a target.
+          if [ "$ENVIRONMENT" = acceptance ]; then
+            # The feature compiles demo/mealprep-demo.db into the binary, seeds it on first
+            # launch and exposes the reset command. Production enables nothing.
+            bun --bun run tauri android build --target aarch64 --apk --features acceptance
+          else
+            bun --bun run tauri android build --target aarch64 --apk
+          fi
+
+      - name: Collect the APK
+        run: |
+          set -euo pipefail
+          # Tauri names the output after the ABI flavour it built, so the path follows the
+          # --target it was given; found rather than hardcoded.
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk \
+            -name '*.apk' ! -name '*unsigned*' -print | head -n 1)
+          if [ -z "$apk" ]; then
+            echo "no APK was produced under src-tauri/gen/android/app/build/outputs/apk" >&2
+            exit 1
+          fi
+          # A release build with no signing config succeeds and yields an APK that cannot
+          # be installed, so the signature is checked here rather than on the phone.
+          if ! unzip -l "$apk" | grep -Eq 'META-INF/.*\.(RSA|EC|DSA)'; then
+            echo "$apk carries no signature; check the keystore secrets" >&2
+            exit 1
+          fi
+          mv "$apk" "$RUNNER_TEMP/$APK_NAME"
+          echo "APK_PATH=$RUNNER_TEMP/$APK_NAME" >> "$GITHUB_ENV"
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          notes=$(printf '%s\n' \
+            "Application id \`$APPLICATION_ID\`, version code $MEALPREP_VERSION_CODE, arm64." \
+            "" \
+            "Built from \`$GITHUB_SHA\`. Install it with Obtainium; see \`docs/release.md\`.")
+          if [ "$ENVIRONMENT" = acceptance ]; then
+            # A prerelease, and the tag is created here: nothing pushed it. Obtainium only
+            # offers prereleases when asked to, so this cannot reach the production tracker.
+            gh release create "$RELEASE_TAG" "$APK_PATH" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_NAME" \
+              --notes "$notes" \
+              --prerelease
+          else
+            gh release create "$RELEASE_TAG" "$APK_PATH" \
+              --title "$RELEASE_NAME" \
+              --notes "$notes"
+          fi
+
+      - name: Remove the signing configuration
+        if: always()
+        run: rm -f src-tauri/gen/android/keystore.properties "$RUNNER_TEMP/release.jks"
