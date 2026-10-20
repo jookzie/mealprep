@@ -17,6 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build.workspace = true
 
 [dependencies]
+mealprep-anthropic.workspace = true
 mealprep-core.workspace = true
 mealprep-openfoodfacts.workspace = true
 mealprep-sqlite.workspace = true

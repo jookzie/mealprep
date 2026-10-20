@@ -20,7 +20,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            command::assistant::apply_assistant_edit,
+            command::assistant::assistant_key_status,
+            command::assistant::clear_assistant_key,
+            command::assistant::list_assistant_requests,
+            command::assistant::propose_assistant_edit,
+            command::assistant::set_assistant_key,
             command::calendar::assign_calendar_day,
+            command::calendar::list_calendar_day_plans,
             command::calendar::list_calendar_days,
             command::calendar::unassign_calendar_day,
             command::category::create_category,
