@@ -624,21 +624,22 @@ fn edit(world: &World, operation: &Operation, change: &mut DayChange) -> Result<
             let date = change.date;
             let plan = change.planned_mut()?;
 
-            let amount = plan
-                .items
-                .iter_mut()
-                .find_map(|item| match item {
-                    DayPlanItem::Product { product_id: id, amount } if id == product_id => {
-                        Some(amount)
-                    }
-                    _ => None,
-                })
-                .ok_or_else(|| {
-                    invalid(format!(
-                        "{name} is not an item of its own on {}; a product inside a meal cannot be adjusted for one day",
-                        format_iso_date(date)
-                    ))
-                })?;
+            let wanted = ItemRef::Product {
+                product_id: *product_id,
+            };
+            let position = sole_position(&plan.items, &wanted, &name, date)?.ok_or_else(|| {
+                invalid(format!(
+                    "{name} is not an item of its own on {}; a product inside a meal cannot be adjusted for one day",
+                    format_iso_date(date)
+                ))
+            })?;
+            // The reference named a product, so the entry it matched holds one.
+            let DayPlanItem::Product { amount, .. } = &mut plan.items[position] else {
+                return Err(invalid(format!(
+                    "{name} is not a product on {}",
+                    format_iso_date(date)
+                )));
+            };
 
             let was = *amount;
             let now = was + delta_amount;
@@ -674,28 +675,20 @@ fn edit(world: &World, operation: &Operation, change: &mut DayChange) -> Result<
         }
 
         Operation::RemoveItem { item, .. } => {
-            let (line, wanted) = match item {
-                ItemRef::Meal { meal_id } => {
-                    (format!("{} removed", world.meal_label(*meal_id)?), *item)
-                }
-                ItemRef::Product { product_id } => (
-                    format!("{} removed", world.product(*product_id)?.name),
-                    *item,
-                ),
+            let name = match item {
+                ItemRef::Meal { meal_id } => world.meal_label(*meal_id)?.to_owned(),
+                ItemRef::Product { product_id } => world.product(*product_id)?.name.clone(),
             };
+            let line = format!("{name} removed");
             let date = change.date;
             let plan = change.planned_mut()?;
-            let position = plan
-                .items
-                .iter()
-                .position(|held| names(held, &wanted))
-                .ok_or_else(|| {
-                    invalid(format!(
-                        "{} does not hold that item on {}",
-                        plan.label,
-                        format_iso_date(date)
-                    ))
-                })?;
+            let position = sole_position(&plan.items, item, &name, date)?.ok_or_else(|| {
+                invalid(format!(
+                    "{} does not hold that item on {}",
+                    plan.label,
+                    format_iso_date(date)
+                ))
+            })?;
             plan.items.remove(position);
             plan.edited = true;
             line
@@ -710,23 +703,15 @@ fn edit(world: &World, operation: &Operation, change: &mut DayChange) -> Result<
             let to = world.meal_label(*to_meal_id)?.to_owned();
             let date = change.date;
             let plan = change.planned_mut()?;
-            let position = plan
-                .items
-                .iter()
-                .position(|item| {
-                    names(
-                        item,
-                        &ItemRef::Meal {
-                            meal_id: *from_meal_id,
-                        },
-                    )
-                })
-                .ok_or_else(|| {
-                    invalid(format!(
-                        "{from} is not on {}, so there is nothing to swap",
-                        format_iso_date(date)
-                    ))
-                })?;
+            let wanted = ItemRef::Meal {
+                meal_id: *from_meal_id,
+            };
+            let position = sole_position(&plan.items, &wanted, &from, date)?.ok_or_else(|| {
+                invalid(format!(
+                    "{from} is not on {}, so there is nothing to swap",
+                    format_iso_date(date)
+                ))
+            })?;
             plan.items[position] = DayPlanItem::Meal {
                 meal_id: *to_meal_id,
             };
@@ -737,6 +722,36 @@ fn edit(world: &World, operation: &Operation, change: &mut DayChange) -> Result<
 
     change.changes.push(line);
     Ok(())
+}
+
+/// Where in a day's order the reference points, when exactly one entry names it.
+///
+/// `None` says nothing names it, which each caller puts in its own words. Two entries is
+/// refused here: an item is addressed by id, and a day can legitimately hold the same one
+/// twice — whey loose at breakfast and again after training. No operation can tell those
+/// apart, because order is the only sequence a day plan carries, so taking the first would
+/// move an item the user did not name and show a change line that does not say which.
+fn sole_position(
+    items: &[DayPlanItem],
+    wanted: &ItemRef,
+    name: &str,
+    date: Date,
+) -> Result<Option<usize>> {
+    let mut found = items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| names(item, wanted))
+        .map(|(position, _)| position);
+    let Some(position) = found.next() else {
+        return Ok(None);
+    };
+    if found.next().is_some() {
+        return Err(invalid(format!(
+            "{name} is on {} more than once, so naming one of them is ambiguous; change that day's plan by hand",
+            format_iso_date(date)
+        )));
+    }
+    Ok(Some(position))
 }
 
 /// Whether the given entry of a day's order is the one the reference names.
@@ -1093,6 +1108,45 @@ mod tests {
             panic!("a product inside a meal should be refused");
         };
         assert!(reason.contains("inside a meal"), "{reason}");
+    }
+
+    #[test]
+    fn refuses_an_item_the_day_holds_twice() {
+        let mut f = fixture();
+        // Whey loose at breakfast and again after training. Both entries name the same
+        // product, and nothing in an operation can say which of them is meant.
+        f.world
+            .plans
+            .get_mut(&f.training)
+            .unwrap()
+            .items
+            .push(DayPlanItem::Product {
+                product_id: f.whey,
+                amount: 30.0,
+            });
+
+        let ambiguous = [
+            Operation::AdjustProductAmount {
+                dates: DateRange::just(TODAY),
+                product_id: f.whey,
+                delta_amount: -40.0,
+            },
+            Operation::RemoveItem {
+                dates: DateRange::just(TODAY),
+                item: ItemRef::Product {
+                    product_id: f.whey,
+                },
+            },
+        ];
+
+        for operation in ambiguous {
+            let Err(Error::Invalid { reason, .. }) =
+                resolve(&f.world, "40 g less whey", &[operation])
+            else {
+                panic!("an item the day holds twice should be refused");
+            };
+            assert!(reason.contains("more than once"), "{reason}");
+        }
     }
 
     #[test]

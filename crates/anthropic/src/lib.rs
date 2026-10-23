@@ -63,6 +63,8 @@ many words, so only name one when they did.
 thing. A run of consecutive dates is one call with a date range, not one call per day.
 - A product can only be adjusted where it is an item of the day's own order. A product \
 inside a meal belongs to that meal, which every other day on that meal shares.
+- An item a day holds twice cannot be named: the app refuses it, because order is the only \
+sequence a day carries. Say which two entries it could be instead of picking one.
 - When the request cannot be expressed with these tools, or the context lacks what it \
 needs, make no call and say in one sentence what is missing.
 
