@@ -123,6 +123,18 @@ Each entry records what happens today, what is deferred, and what would trigger 
 - **Trigger**: reversing one by hand often enough to want the button, or a request that goes
   wrong in a way the log reads clearly but is tedious to put back.
 
+## Naming one of two identical items in a day
+- **Today**: an assistant operation addresses an item by id, and a day can hold the same
+  product or meal twice — whey loose at breakfast and again after training. `sole_position`
+  in `service::assistant` refuses such a request as `Invalid` and says the item is on that
+  date more than once, rather than editing the first entry and showing a change line that
+  does not say which one moved.
+- **Deferred**: addressing an item by its position in the day's order as well as by id, so
+  "the one after training" can be expressed. It is a field on three operations and a tool
+  schema change, and it makes every proposal carry a number the user cannot see.
+- **Trigger**: a day worth planning that genuinely holds one product twice, often enough
+  that editing the plan by hand is the slower path.
+
 ## A conversation with the assistant
 - **Today**: one request, one proposal. The request carries no history, and the model is
   given the plan rather than the last thing it said. A correction to a proposal is a fresh
