@@ -17,6 +17,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The workspace includes src-tauri, and Tauri's desktop build links GTK and WebKit
+      # through pkg-config, so clippy and cargo test need them present even though nothing
+      # here runs a window. The Android release build cross-compiles and needs none of it.
+      - name: Install the Linux libraries Tauri builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libayatana-appindicator3-dev \
+            patchelf
+
       # mise provides bun only. The workspace pins rust-version 1.94 and the Android
       # builds need rustup's cross-compilation targets, so mise.toml deliberately leaves
       # the Rust toolchain to rustup, and so does this.
