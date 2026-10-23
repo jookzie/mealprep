@@ -13,19 +13,29 @@ use crate::{
     row::{self, internal},
 };
 
-const INSERT: &str = "INSERT INTO day_plans (id, label, category_id, created_at, updated_at) \
-    VALUES (?, ?, ?, ?, ?) RETURNING *";
+const INSERT: &str = "INSERT INTO day_plans \
+    (id, label, category_id, source_plan_id, created_at, updated_at) \
+    VALUES (?, ?, ?, ?, ?, ?) RETURNING *";
 const SELECT: &str = "SELECT * FROM day_plans WHERE id = ? AND deleted_at IS NULL";
-const LIST: &str =
-    "SELECT * FROM day_plans WHERE deleted_at IS NULL ORDER BY label COLLATE NOCASE, id";
+// source_plan_id IS NULL: a day-local copy is not a plan the user keeps, so it is in no
+// list and in no picker, and nothing but its own calendar day can reach it.
+const LIST: &str = "SELECT * FROM day_plans \
+    WHERE source_plan_id IS NULL AND deleted_at IS NULL ORDER BY label COLLATE NOCASE, id";
+const LIST_BY_IDS: &str = "SELECT * FROM day_plans \
+    WHERE id IN (SELECT value FROM json_each(?)) AND deleted_at IS NULL";
 const UPDATE: &str = "UPDATE day_plans SET label = ?, category_id = ?, updated_at = ? \
     WHERE id = ? AND deleted_at IS NULL RETURNING *";
 const DELETE: &str =
     "UPDATE day_plans SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL";
 // coalesce, not a comparison: NULL = NULL is never true, so without the fold every
-// uncategorised plan would be unique by definition.
+// uncategorised plan would be unique by definition. Copies are excluded: they carry the
+// label of the plan they were copied from, which is not a clash with it.
 const LABEL_TAKEN: &str = "SELECT count(*) FROM day_plans \
-    WHERE label = ? COLLATE NOCASE AND coalesce(category_id, '') = ? AND id <> ? AND deleted_at IS NULL";
+    WHERE label = ? COLLATE NOCASE AND coalesce(category_id, '') = ? AND id <> ? \
+        AND source_plan_id IS NULL AND deleted_at IS NULL";
+// The source of a copy of a copy is the original, so the chain is never longer than one.
+const SOURCE_OF: &str =
+    "SELECT coalesce(source_plan_id, id) FROM day_plans WHERE id = ? AND deleted_at IS NULL";
 
 const INSERT_ITEM: &str = "INSERT INTO day_plan_items \
     (id, day_plan_id, kind, meal_id, product_id, amount, position, created_at, updated_at) \
@@ -38,23 +48,23 @@ const DELETE_ITEMS: &str = "UPDATE day_plan_items SET deleted_at = ?, updated_at
 
 impl DayPlanStore for SqliteStore {
     async fn create_day_plan(&self, draft: &DayPlanDraft) -> Result<DayPlan> {
-        let id = Uuid::new_v4().to_string();
-        let now = row::now();
-        let mut transaction = self.pool.begin().await.map_err(internal)?;
+        self.insert_day_plan(draft, None).await
+    }
 
-        let plan: DayPlanRow = sqlx::query_as(INSERT)
-            .bind(&id)
-            .bind(&draft.label)
-            .bind(draft.category_id.map(|category_id| category_id.to_string()))
-            .bind(&now)
-            .bind(&now)
-            .fetch_one(&mut *transaction)
+    async fn create_day_plan_copy(
+        &self,
+        source_plan_id: Uuid,
+        draft: &DayPlanDraft,
+    ) -> Result<DayPlan> {
+        let source: Option<String> = sqlx::query_scalar(SOURCE_OF)
+            .bind(source_plan_id.to_string())
+            .fetch_optional(&self.pool)
             .await
             .map_err(internal)?;
-        insert_items(&mut transaction, &id, &draft.items, &now).await?;
-
-        transaction.commit().await.map_err(internal)?;
-        plan.into_day_plan(draft.items.clone())
+        let Some(source) = source else {
+            return Err(row::not_found(Entity::DayPlan, source_plan_id));
+        };
+        self.insert_day_plan(draft, Some(source)).await
     }
 
     async fn get_day_plan(&self, id: Uuid) -> Result<DayPlan> {
@@ -75,6 +85,15 @@ impl DayPlanStore for SqliteStore {
 
     async fn list_day_plans(&self) -> Result<Vec<DayPlan>> {
         let plans: Vec<DayPlanRow> = sqlx::query_as(LIST)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(internal)?;
+        attach_items(&self.pool, plans).await
+    }
+
+    async fn list_day_plans_by_ids(&self, ids: &[Uuid]) -> Result<Vec<DayPlan>> {
+        let plans: Vec<DayPlanRow> = sqlx::query_as(LIST_BY_IDS)
+            .bind(row::id_list(ids))
             .fetch_all(&self.pool)
             .await
             .map_err(internal)?;
@@ -142,11 +161,40 @@ impl DayPlanStore for SqliteStore {
     }
 }
 
+impl SqliteStore {
+    /// Inserts a plan with its items, as itself or as the copy of the given source.
+    async fn insert_day_plan(
+        &self,
+        draft: &DayPlanDraft,
+        source_plan_id: Option<String>,
+    ) -> Result<DayPlan> {
+        let id = Uuid::new_v4().to_string();
+        let now = row::now();
+        let mut transaction = self.pool.begin().await.map_err(internal)?;
+
+        let plan: DayPlanRow = sqlx::query_as(INSERT)
+            .bind(&id)
+            .bind(&draft.label)
+            .bind(draft.category_id.map(|category_id| category_id.to_string()))
+            .bind(source_plan_id)
+            .bind(&now)
+            .bind(&now)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(internal)?;
+        insert_items(&mut transaction, &id, &draft.items, &now).await?;
+
+        transaction.commit().await.map_err(internal)?;
+        plan.into_day_plan(draft.items.clone())
+    }
+}
+
 #[derive(sqlx::FromRow)]
 struct DayPlanRow {
     id: String,
     label: String,
     category_id: Option<String>,
+    source_plan_id: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -157,12 +205,14 @@ impl DayPlanRow {
             id,
             label,
             category_id,
+            source_plan_id,
             created_at,
             updated_at,
         } = self;
 
         let id = row::parse_id(&id)?;
         let category_id = row::parse_optional_id(category_id.as_deref())?;
+        let source_plan_id = row::parse_optional_id(source_plan_id.as_deref())?;
         let created_at = row::parse_timestamp(&created_at)?;
         let updated_at = row::parse_timestamp(&updated_at)?;
 
@@ -170,6 +220,7 @@ impl DayPlanRow {
             id,
             label,
             category_id,
+            source_plan_id,
             items,
             created_at,
             updated_at,

@@ -4,14 +4,14 @@ use uuid::Uuid;
 use super::Mealprep;
 use crate::{
     Entity, Error, Result,
-    domain::CalendarDay,
-    store::{CalendarStore, DayPlanStore},
+    domain::{CalendarDay, ResolvedDayPlan},
+    store::{CalendarStore, CategoryStore, DayPlanStore, MealStore, ProductStore},
 };
 
 /// The longest range a calendar read may span; longer is an export, not a view.
 const MAX_RANGE_DAYS: i64 = 366;
 
-impl<S, C> Mealprep<S, C>
+impl<S, C, A> Mealprep<S, C, A>
 where
     S: CalendarStore + DayPlanStore,
 {
@@ -50,5 +50,33 @@ where
     pub async fn unassign_calendar_day(&self, date: Date) -> Result<()> {
         self.store.unassign_calendar_day(date).await?;
         Ok(())
+    }
+}
+
+impl<S, C, A> Mealprep<S, C, A>
+where
+    S: CalendarStore + CategoryStore + DayPlanStore + MealStore + ProductStore,
+{
+    /// Lists the plans the dates from `from` to `to` are assigned, resolved and derived.
+    ///
+    /// The day plan list leaves day-local copies out, so a view that joins dates to plans
+    /// needs this to render a date the assistant has detached onto one.
+    pub async fn list_calendar_day_plans(
+        &self,
+        from: Date,
+        to: Date,
+    ) -> Result<Vec<ResolvedDayPlan>> {
+        let days = self.list_calendar_days(from, to).await?;
+        let ids = {
+            let mut ids: Vec<Uuid> = Vec::new();
+            for day in &days {
+                if !ids.contains(&day.day_plan_id) {
+                    ids.push(day.day_plan_id);
+                }
+            }
+            ids
+        };
+        let plans = self.store.list_day_plans_by_ids(&ids).await?;
+        self.resolve_day_plans(plans).await
     }
 }

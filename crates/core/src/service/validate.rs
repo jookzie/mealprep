@@ -1,6 +1,10 @@
+use time::Date;
+
 use crate::{
     Entity, Error, Result,
-    domain::{DayPlanDraft, DayPlanItem, Macros, MealDraft, Nutrients, ProductDraft},
+    domain::{
+        DayPlanDraft, DayPlanItem, Macros, MealDraft, Nutrients, ProductDraft, parse_iso_date,
+    },
 };
 
 /// Checks the given product draft, trimming what the user typed.
@@ -176,6 +180,86 @@ pub(super) fn weight(kilograms: f64) -> Result<f64> {
     verdict(Entity::WeightEntry, kilograms, reasons)
 }
 
+/// The longest request the assistant takes. A correction is a sentence; anything this
+/// long is a document, and sending it would only cost the user tokens.
+const MAX_REQUEST_CHARS: usize = 2_000;
+
+/// Checks what the user typed at the assistant, returning it trimmed.
+pub(super) fn assistant_request(request: String) -> Result<String> {
+    let request = request.trim().to_owned();
+    let reasons = if request.is_empty() {
+        vec!["the request is empty".to_owned()]
+    } else if request.chars().count() > MAX_REQUEST_CHARS {
+        vec![format!(
+            "the request is longer than {MAX_REQUEST_CHARS} characters"
+        )]
+    } else {
+        Vec::new()
+    };
+    verdict(Entity::AssistantRequest, request, reasons)
+}
+
+/// Checks the credential the user pasted in, returning it trimmed.
+///
+/// What a valid key looks like is the adapter's business; all that is checked here is
+/// that it is one token, because a key with a space in it is a paste that went wrong.
+pub(super) fn assistant_key(key: String) -> Result<String> {
+    let key = key.trim().to_owned();
+    let reasons = if key.is_empty() {
+        vec!["the key is empty".to_owned()]
+    } else if key.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        vec!["the key has a space or a line break in it".to_owned()]
+    } else {
+        Vec::new()
+    };
+    verdict(Entity::AssistantRequest, key, reasons)
+}
+
+/// The words that ask for a day already gone and cannot mean anything else.
+///
+/// Deliberately short. Everything outside it counts as not asking for the past, so a
+/// request that merely sounds retrospective is refused rather than rewriting history —
+/// which is the failure that cannot be undone.
+const PAST_PHRASES: [&str; 13] = [
+    "yesterday",
+    "last week",
+    "last month",
+    "last monday",
+    "last tuesday",
+    "last wednesday",
+    "last thursday",
+    "last friday",
+    "last saturday",
+    "last sunday",
+    "earlier this week",
+    "so far this week",
+    "in the past",
+];
+
+/// Whether the request unambiguously asks for a date before today.
+///
+/// It does when it names a `YYYY-MM-DD` date that has passed, or uses one of the phrases
+/// above. The rules refuse to touch a past date otherwise.
+pub(super) fn past_dates_requested(request: &str, today: Date) -> bool {
+    let lowercase = request.to_lowercase();
+    if PAST_PHRASES.iter().any(|phrase| lowercase.contains(phrase)) {
+        return true;
+    }
+    mentioned_dates(&lowercase)
+        .into_iter()
+        .any(|date| date < today)
+}
+
+/// Every `YYYY-MM-DD` date the text spells out.
+///
+/// Split on anything a date cannot contain, so a date keeps its punctuation out: "on
+/// 2026-10-14." yields the date and not the full stop.
+fn mentioned_dates(text: &str) -> Vec<Date> {
+    text.split(|c: char| !c.is_ascii_digit() && c != '-')
+        .filter_map(|token| parse_iso_date(token).ok())
+        .collect()
+}
+
 fn push_macro_reasons(macros: Macros, reasons: &mut Vec<String>) {
     for (figure, value) in macros.named() {
         if !is_quantity(value) {
@@ -254,6 +338,52 @@ mod tests {
         for code in ["", "   ", "301/../x", "3017 6204", "٣٠١٧"] {
             assert!(catalogue_code(code).is_err(), "{code:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn reads_a_past_date_only_when_the_request_is_unambiguous() {
+        let today = crate::domain::parse_iso_date("2026-10-20").unwrap();
+
+        for request in [
+            "yesterday I had 40 g less whey",
+            "Last Friday was a rest day",
+            "on 2026-10-14 I skipped lunch",
+            "drop the chocolate in the past week",
+        ] {
+            assert!(
+                past_dates_requested(request, today),
+                "{request:?} asks for the past"
+            );
+        }
+
+        for request in [
+            "next 4 days I have 40 g less whey",
+            "add a banana tomorrow",
+            "on 2026-10-25 I am travelling",
+            "swap the last meal of the day",
+        ] {
+            assert!(
+                !past_dates_requested(request, today),
+                "{request:?} does not ask for the past"
+            );
+        }
+    }
+
+    #[test]
+    fn trims_a_request_and_a_key_and_refuses_the_useless_ones() {
+        assert_eq!(
+            assistant_request("  more protein  ".to_owned()).unwrap(),
+            "more protein"
+        );
+        assert!(assistant_request("   ".to_owned()).is_err());
+        assert!(assistant_request("x".repeat(2_001)).is_err());
+
+        assert_eq!(
+            assistant_key(" sk-ant-demo ".to_owned()).unwrap(),
+            "sk-ant-demo"
+        );
+        assert!(assistant_key("sk-ant demo".to_owned()).is_err());
+        assert!(assistant_key(String::new()).is_err());
     }
 
     #[test]

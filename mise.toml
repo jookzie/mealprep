@@ -53,7 +53,12 @@ run = "cargo fmt --all -- --check"
 [tasks."rust:lint"]
 description = "Lint the Rust workspace"
 dir = "{{config_root}}"
-run = "cargo clippy --workspace --all-targets -- -D warnings"
+# Twice over: the acceptance environment's code is behind a cargo feature, so the
+# default pass never compiles it and a break in it would surface at release time.
+run = [
+  "cargo clippy --workspace --all-targets -- -D warnings",
+  "cargo clippy -p mealprep-rs --all-targets --features acceptance -- -D warnings",
+]
 
 [tasks."rust:test"]
 description = "Run the Rust tests"

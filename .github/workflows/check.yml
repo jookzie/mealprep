@@ -1,0 +1,61 @@
+name: check
+
+on:
+  pull_request:
+  push:
+
+# A later push to the same ref makes the earlier run's answer worthless.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # One job on purpose: the four checks share one cargo build and one bun install, and
+    # splitting them would pay for both twice to save a few minutes of wall clock.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The workspace includes src-tauri, and Tauri's desktop build links GTK and WebKit
+      # through pkg-config, so clippy and cargo test need them present even though nothing
+      # here runs a window. The Android release build cross-compiles and needs none of it.
+      - name: Install the Linux libraries Tauri builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libayatana-appindicator3-dev \
+            patchelf
+
+      # mise provides bun only. The workspace pins rust-version 1.94 and the Android
+      # builds need rustup's cross-compilation targets, so mise.toml deliberately leaves
+      # the Rust toolchain to rustup, and so does this.
+      - uses: jdx/mise-action@v5
+
+      - name: Install the Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal \
+            --component clippy --component rustfmt --no-self-update
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Cache the bun module store
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      # Before the checks: `mise run test` runs the frontend suite too, and
+      # `frontend:check` needs the SvelteKit types that `svelte-kit sync` generates.
+      - run: bun install --frozen-lockfile
+
+      - run: mise run format:check
+      - run: mise run lint
+      - run: mise run test
+      - run: mise run frontend:check

@@ -3,6 +3,7 @@
 //! One database file holds every entity. The schema lives in `migrations/` and is brought
 //! up to date whenever a store is opened.
 
+mod assistant;
 mod calendar;
 mod category;
 mod day_plan;

@@ -12,9 +12,11 @@ use std::{collections::HashMap, env, fs, process};
 
 use mealprep_core::{
     Entity, Error, Result,
-    domain::{CatalogueEntry, Macros, MealDraft, ProductDraft, Serving, Unit},
+    domain::{
+        AssistantContext, CatalogueEntry, Macros, MealDraft, ProductDraft, Proposal, Serving, Unit,
+    },
     service::Mealprep,
-    store::Catalogue,
+    store::{Assistant, Catalogue},
 };
 use mealprep_sqlite::SqliteStore;
 use serde_json::Value;
@@ -31,6 +33,22 @@ impl Catalogue for NoCatalogue {
         Err(Error::NotFound {
             entity: Entity::CatalogueEntry,
             id: code.to_owned(),
+        })
+    }
+}
+
+/// Nor an assistant: an import is not a conversation.
+struct NoAssistant;
+
+impl Assistant for NoAssistant {
+    async fn propose(
+        &self,
+        _key: &str,
+        _request: &str,
+        _context: &AssistantContext,
+    ) -> Result<Proposal> {
+        Err(Error::Internal {
+            reason: "the import has no assistant".to_owned(),
         })
     }
 }
@@ -54,7 +72,7 @@ async fn run() -> Result<()> {
     let meals: Value = read_json(meals_path);
 
     let store = SqliteStore::open(db_path.as_ref()).await?;
-    let mealprep = Mealprep::new(store, NoCatalogue);
+    let mealprep = Mealprep::new(store, NoCatalogue, NoAssistant);
 
     let mut ids: HashMap<String, uuid::Uuid> = HashMap::new();
     for entry in products.as_array().expect("products is an array") {

@@ -12,6 +12,11 @@ pub struct DayPlan {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category_id: Option<Uuid>,
+    /// Set when this plan is one date's own copy of another, which is how an edit bounded
+    /// to a date leaves every other date sharing the original where it was. A copy is kept
+    /// out of the plan list and the pickers: it is not a plan the user keeps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_plan_id: Option<Uuid>,
     pub items: Vec<DayPlanItem>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
@@ -51,6 +56,9 @@ pub struct ResolvedDayPlan {
     pub label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category_id: Option<Uuid>,
+    /// Set when this plan is one date's own copy of another; see [`DayPlan::source_plan_id`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_plan_id: Option<Uuid>,
     pub items: Vec<ResolvedDayPlanItem>,
     pub macros: Macros,
     pub cost: Cost,

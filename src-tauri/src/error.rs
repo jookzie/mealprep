@@ -16,6 +16,7 @@ pub struct Error {
 #[derive(Copy, Clone, Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ErrorKind {
+    AssistantUnavailable,
     CatalogueUnavailable,
     Conflict,
     Internal,
@@ -30,6 +31,7 @@ impl From<CoreError> for Error {
             CoreError::Invalid { .. } => ErrorKind::Invalid,
             CoreError::Conflict { .. } => ErrorKind::Conflict,
             CoreError::CatalogueUnavailable { .. } => ErrorKind::CatalogueUnavailable,
+            CoreError::AssistantUnavailable { .. } => ErrorKind::AssistantUnavailable,
             CoreError::Internal { .. } => ErrorKind::Internal,
         };
         let message = error.to_string();
@@ -45,6 +47,10 @@ pub enum SetupError {
 
     #[error("cannot create {path}: {source}")]
     CreateDataDirectory { path: PathBuf, source: io::Error },
+
+    #[cfg(feature = "acceptance")]
+    #[error("cannot seed the demo database at {path}: {source}")]
+    SeedDemoDatabase { path: PathBuf, source: io::Error },
 
     #[error(transparent)]
     Mealprep(#[from] CoreError),

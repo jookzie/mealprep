@@ -1,3 +1,4 @@
+mod assistant;
 mod calendar;
 mod category;
 mod cost;
@@ -11,6 +12,11 @@ mod targets;
 mod weight;
 
 pub use self::{
+    assistant::{
+        AppliedChange, AssistantContext, AssistantKeyStatus, AssistantRecord, AssistantRecordDraft,
+        ContextDay, ContextItem, ContextMeal, ContextPlan, ContextProduct, DateRange, ItemRef,
+        Operation, OperationKind, Preview, PreviewDay, Proposal,
+    },
     calendar::CalendarDay,
     category::{Category, CategoryDraft, CategoryScope},
     cost::Cost,

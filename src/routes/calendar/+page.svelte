@@ -34,7 +34,7 @@
 		buildPlannedPeriod({
 			weekStart: data.weekStart,
 			days: data.days,
-			dayPlans: data.dayPlans,
+			dayPlans: data.joinedPlans,
 			targets: data.targets,
 		}),
 	);

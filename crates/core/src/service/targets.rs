@@ -5,7 +5,7 @@ use crate::{
     store::TargetsStore,
 };
 
-impl<S, C> Mealprep<S, C>
+impl<S, C, A> Mealprep<S, C, A>
 where
     S: TargetsStore,
 {
