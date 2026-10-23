@@ -1133,9 +1133,7 @@ mod tests {
             },
             Operation::RemoveItem {
                 dates: DateRange::just(TODAY),
-                item: ItemRef::Product {
-                    product_id: f.whey,
-                },
+                item: ItemRef::Product { product_id: f.whey },
             },
         ];
 
