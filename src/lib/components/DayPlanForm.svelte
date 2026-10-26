@@ -1,3 +1,14 @@
+<script lang="ts" module>
+	export type DayPlanFormState = {
+		label: string;
+		categoryId: string | undefined;
+		rows: (
+			| { key: number; kind: 'meal'; mealId: string }
+			| { key: number; kind: 'product'; productId: string; amount: number | null }
+		)[];
+	};
+</script>
+
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type {
@@ -14,9 +25,11 @@
 	import { formatAmount } from '$lib/domain/format';
 	import { addMacros, servingMacros, ZERO_MACROS } from '$lib/domain/macros';
 	import { move } from '$lib/domain/order';
+	import type { Kept } from '$lib/memory.svelte';
 	import CategorySelect from './CategorySelect.svelte';
 	import CostFigure from './CostFigure.svelte';
 	import Dialog from './Dialog.svelte';
+	import DraftNotice from './DraftNotice.svelte';
 	import GroupedPicker from './GroupedPicker.svelte';
 	import MacroLine from './MacroLine.svelte';
 	import MacroMeters from './MacroMeters.svelte';
@@ -26,6 +39,7 @@
 
 	let {
 		initial,
+		draft,
 		meals,
 		products,
 		categories,
@@ -35,6 +49,8 @@
 		onSubmit,
 	}: {
 		initial: DayPlanDraft;
+		/** Where the form keeps what is typed, so it outlasts the screen. */
+		draft: Kept<DayPlanFormState | null>;
 		meals: readonly Meal[];
 		products: readonly Product[];
 		categories: readonly Category[];
@@ -44,15 +60,30 @@
 		onSubmit: (draft: DayPlanDraft) => Promise<unknown>;
 	} = $props();
 
-	type Row =
-		| { key: number; kind: 'meal'; mealId: string }
-		| { key: number; kind: 'product'; productId: string; amount: number | null };
+	type Row = DayPlanFormState['rows'][number];
 
-	const seed = untrack(() => initial);
-	let nextKey = 0;
-	let label = $state(seed.label);
-	let categoryId = $state(seed.categoryId);
-	let rows = $state<Row[]>(seed.items.map((item) => ({ ...item, key: nextKey++ })));
+	function fresh(): DayPlanFormState {
+		const seed = untrack(() => initial);
+		return {
+			label: seed.label,
+			categoryId: seed.categoryId,
+			rows: seed.items.map((item, key) => ({ ...item, key })),
+		};
+	}
+
+	function toDraft(state: DayPlanFormState): DayPlanDraft {
+		return { label: state.label, categoryId: state.categoryId, items: state.rows.map(toItem) };
+	}
+
+	// Seeded once: from the kept draft when there is one, from the props otherwise. A
+	// refresh mid-edit must not overwrite what is being typed.
+	const box = untrack(() => draft);
+	let restored = $state(
+		box.value !== null && JSON.stringify(toDraft(box.value)) !== JSON.stringify(toDraft(fresh())),
+	);
+	box.value ??= fresh();
+	const form = box.value;
+	let nextKey = Math.max(-1, ...form.rows.map((row) => row.key)) + 1;
 	let pickingMeal = $state(false);
 	let pickingProduct = $state(false);
 	let busy = $state(false);
@@ -81,34 +112,40 @@
 		};
 	}
 
-	const computed = $derived(rows.map(figures));
+	const computed = $derived(form.rows.map(figures));
 	const totalMacros = $derived(computed.reduce((sum, row) => addMacros(sum, row.macros), ZERO_MACROS));
 	const totalCost = $derived(computed.reduce((sum, row) => addCost(sum, row.cost), ZERO_COST));
 	const valid = $derived(
-		label.trim() !== '' &&
-			rows.every((row) => row.kind === 'meal' || (row.amount !== null && row.amount > 0)),
+		form.label.trim() !== '' &&
+			form.rows.every((row) => row.kind === 'meal' || (row.amount !== null && row.amount > 0)),
 	);
 
 	function addMeal(meal: Meal) {
-		rows.push({ key: nextKey++, kind: 'meal', mealId: meal.id });
+		form.rows.push({ key: nextKey++, kind: 'meal', mealId: meal.id });
 		pickingMeal = false;
 	}
 
 	function addProduct(product: Product) {
-		rows.push({ key: nextKey++, kind: 'product', productId: product.id, amount: 100 });
+		form.rows.push({ key: nextKey++, kind: 'product', productId: product.id, amount: 100 });
 		pickingProduct = false;
 	}
 
-	function toDraft(row: Row): DayPlanItemDraft {
+	function toItem(row: Row): DayPlanItemDraft {
 		if (row.kind === 'meal') return { kind: 'meal', mealId: row.mealId };
 		return { kind: 'product', productId: row.productId, amount: row.amount ?? 0 };
+	}
+
+	function startOver() {
+		Object.assign(form, fresh());
+		nextKey = form.rows.length;
+		restored = false;
 	}
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		busy = true;
 		try {
-			await onSubmit({ label, categoryId, items: rows.map(toDraft) });
+			await onSubmit(toDraft(form));
 		} finally {
 			busy = false;
 		}
@@ -116,23 +153,27 @@
 </script>
 
 <form class="stack" onsubmit={submit}>
+	{#if restored}
+		<DraftNotice onStartOver={startOver} />
+	{/if}
+
 	<section class="card stack">
 		<label class="field">
 			<span>Label</span>
-			<input bind:value={label} required />
+			<input bind:value={form.label} required />
 		</label>
-		<CategorySelect {categories} bind:value={categoryId} />
+		<CategorySelect {categories} bind:value={form.categoryId} />
 	</section>
 
 	<section class="card stack">
 		<div class="row spread">
 			<h2>What is eaten, in order</h2>
 		</div>
-		{#if rows.length === 0}
+		{#if form.rows.length === 0}
 			<p class="empty">Nothing yet.</p>
 		{:else}
 			<ul class="list">
-				{#each rows as row, index (row.key)}
+				{#each form.rows as row, index (row.key)}
 					{@const shown = computed[index]}
 					<li class="stack entry">
 						<div class="row spread">
@@ -142,10 +183,10 @@
 							</div>
 							<MoveButtons
 								{index}
-								length={rows.length}
+								length={form.rows.length}
 								name={shown?.name ?? 'item'}
-								onMove={(from, to) => (rows = move(rows, from, to))}
-								onRemove={() => rows.splice(index, 1)}
+								onMove={(from, to) => (form.rows = move(form.rows, from, to))}
+								onRemove={() => form.rows.splice(index, 1)}
 							/>
 						</div>
 						{#if row.kind === 'product'}

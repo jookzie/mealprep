@@ -5,19 +5,20 @@
 	import ScanButton from '$lib/components/ScanButton.svelte';
 	import { productCost } from '$lib/domain/cost';
 	import { nextSort, type SortKey, sortRows } from '$lib/domain/sort';
+	import { keep } from '$lib/memory.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	let query = $state('');
-	let sort = $state(nextSort({ key: 'energyKcal', direction: 'asc' }, 'name'));
+	const query = keep('products:query', '');
+	const sort = keep('products:sort', nextSort({ key: 'energyKcal', direction: 'asc' }, 'name'));
 
 	const rows = $derived.by(() => {
-		const needle = query.trim().toLowerCase();
+		const needle = query.value.trim().toLowerCase();
 		const matching = data.products.filter((product) =>
 			`${product.name} ${product.brand ?? ''}`.toLowerCase().includes(needle),
 		);
-		return sortRows(matching, sort);
+		return sortRows(matching, sort.value);
 	});
 
 	const SORTS: { key: SortKey; label: string }[] = [
@@ -38,12 +39,12 @@
 </PageHeader>
 
 <div class="row">
-	<input class="grow" type="search" placeholder="Filter by name or brand" bind:value={query} />
+	<input class="grow" type="search" placeholder="Filter by name or brand" bind:value={query.value} />
 	<select
 		class="sort"
 		aria-label="Sort by"
-		value={sort.key}
-		onchange={(event) => (sort = nextSort(sort, event.currentTarget.value as SortKey))}
+		value={sort.value.key}
+		onchange={(event) => (sort.value = nextSort(sort.value, event.currentTarget.value as SortKey))}
 	>
 		{#each SORTS as option (option.key)}
 			<option value={option.key}>{option.label}</option>
@@ -52,7 +53,7 @@
 	<button
 		class="icon"
 		aria-label="Reverse order"
-		onclick={() => (sort = nextSort(sort, sort.key))}>{sort.direction === 'asc' ? '↑' : '↓'}</button
+		onclick={() => (sort.value = nextSort(sort.value, sort.value.key))}>{sort.value.direction === 'asc' ? '↑' : '↓'}</button
 	>
 </div>
 

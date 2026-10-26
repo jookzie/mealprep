@@ -6,16 +6,21 @@
 	import WeightChart from '$lib/components/WeightChart.svelte';
 	import { fullDateLabel, todayIso } from '$lib/domain/week';
 	import { formatKilograms, formatRate, RANGES, type Range, rangeLabel, visible } from '$lib/domain/weight';
+	import { keep } from '$lib/memory.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	let kilograms = $state<number | null>(null);
-	let date = $state(todayIso());
-	let range = $state<Range>(90);
+	const kilograms = keep<number | null>('weight:kilograms', null);
+	const date = keep('weight:date', todayIso());
+	const range = keep<Range>('weight:range', 90);
 	let busy = $state(false);
 
-	const points = $derived(visible(data.series.points, range));
+	// The date is kept only alongside a weight not yet saved. An app left open overnight
+	// would otherwise offer yesterday, and file the morning's weigh-in under it.
+	if (kilograms.value === null) date.value = todayIso();
+
+	const points = $derived(visible(data.series.points, range.value));
 	const history = $derived(
 		[...data.series.points].reverse().filter((point) => point.kilograms !== undefined),
 	);
@@ -23,13 +28,14 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (kilograms === null) return;
+		const weight = kilograms.value;
+		if (weight === null) return;
 		busy = true;
-		const saved = await runMutation(() => setWeightEntry(date, kilograms as number), {
+		const saved = await runMutation(() => setWeightEntry(date.value, weight), {
 			success: 'Weight saved',
 		});
 		busy = false;
-		if (saved) kilograms = null;
+		if (saved) kilograms.value = null;
 	}
 </script>
 
@@ -37,19 +43,19 @@
 
 <form class="card stack" onsubmit={submit}>
 	<div class="grid-2">
-		<NumberField label="Weight" suffix="kg" bind:value={kilograms} required />
+		<NumberField label="Weight" suffix="kg" bind:value={kilograms.value} required />
 		<label class="field">
 			<span>Date</span>
-			<input type="date" max={todayIso()} bind:value={date} />
+			<input type="date" max={todayIso()} bind:value={date.value} />
 		</label>
 	</div>
-	{#if today?.kilograms !== undefined && date === todayIso()}
+	{#if today?.kilograms !== undefined && date.value === todayIso()}
 		<p class="small muted">
 			Today already reads {formatKilograms(today.kilograms)}. Saving replaces it.
 		</p>
 	{/if}
 	<div class="row end">
-		<button class="primary" type="submit" disabled={busy || kilograms === null}>Save</button>
+		<button class="primary" type="submit" disabled={busy || kilograms.value === null}>Save</button>
 	</div>
 </form>
 
@@ -76,9 +82,9 @@
 		<div class="row ranges" role="group" aria-label="Range">
 			{#each RANGES as option (option)}
 				<button
-					class:selected={range === option}
-					aria-pressed={range === option}
-					onclick={() => (range = option)}>{rangeLabel(option)}</button
+					class:selected={range.value === option}
+					aria-pressed={range.value === option}
+					onclick={() => (range.value = option)}>{rangeLabel(option)}</button
 				>
 			{/each}
 		</div>

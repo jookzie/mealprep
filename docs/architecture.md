@@ -84,12 +84,15 @@ src/
                        summaries and reversal hints
     components/        forms, pickers, meters, the weight chart, the scan overlay,
                        the page header
+    memory.svelte.ts   what the user was in the middle of, kept across screens
+    assistant.svelte.ts  the assistant's request and pending proposal
 ```
 Routes own all I/O. Components take data and callbacks, and never call `invoke`.
 
 The shell is a bottom tab bar in `+layout.svelte`, sized around
 `env(safe-area-inset-bottom)` and hidden while a scan is running. There is no sidebar and no
-command palette: the primary device is a phone.
+command palette: the primary device is a phone. Each tab returns to where its section was
+left; tapping the active tab goes to the top of the section.
 
 ## Frontend data flow
 ```
@@ -106,6 +109,13 @@ call failed. There is no second caching layer.
 says so, because the data lives on the device and a browser tab has none of it.
 
 Editors load the entity first, because every write is a full replacement.
+
+A screen's own `$state` dies with the screen, and the tab bar unmounts it on every switch.
+What the user was in the middle of — list filters and sorts, unsaved forms, the weight
+range — lives in `memory.svelte.ts` instead, for as long as the app runs and never on disk.
+A form's draft is keyed on the record and its `updatedAt`, so it is dropped once the record
+changes, and `forgetOnSave` clears it when the save succeeds. A restored draft says so and
+offers to start over.
 
 ## Key decisions
 - **sqlx for persistence**: it is the async SQL crate on blessed.rs that speaks both SQLite and
