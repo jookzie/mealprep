@@ -1,12 +1,6 @@
 <script lang="ts">
-	import {
-		applyAssistantEdit,
-		clearAssistantKey,
-		type Preview,
-		proposeAssistantEdit,
-		runMutation,
-		setAssistantKey,
-	} from '$lib/api';
+	import { clearAssistantKey, runMutation, setAssistantKey } from '$lib/api';
+	import { assistant } from '$lib/assistant.svelte';
 	import MacroLine from '$lib/components/MacroLine.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import {
@@ -24,16 +18,13 @@
 
 	let { data }: PageProps = $props();
 
-	let request = $state('');
 	let keyDraft = $state('');
 	let editingKey = $state(false);
-	let busy = $state(false);
 
-	// The proposal lives here and nowhere else: nothing is written until Apply, and
-	// Discard has to leave no trace of it.
-	let preview = $state<Preview | null>(null);
+	// The request and the proposal live in the session, so they outlast this screen.
+	const preview = $derived(assistant.preview);
 
-	// Read once per proposal rather than per render: a day that crosses midnight mid-review
+	// Read once per visit rather than per render: a day that crosses midnight mid-review
 	// would otherwise change category under the user's cursor.
 	const today = todayIso();
 	const summary = $derived(preview ? summarisePreview(preview, today) : null);
@@ -43,34 +34,6 @@
 		'swap tomorrow for a rest day',
 		'add a banana to Friday',
 	];
-
-	async function ask() {
-		const text = request.trim();
-		if (text === '') return;
-		busy = true;
-		// A proposal reads nothing the loaded data owns, so there is nothing to invalidate.
-		const result = await runMutation(() => proposeAssistantEdit(text), { invalidate: false });
-		busy = false;
-		if (result) preview = result;
-	}
-
-	async function apply() {
-		const proposal = preview?.proposal;
-		if (!proposal) return;
-		busy = true;
-		const applied = await runMutation(() => applyAssistantEdit(proposal), {
-			success: 'Applied to your plan',
-		});
-		busy = false;
-		if (applied) {
-			preview = null;
-			request = '';
-		}
-	}
-
-	function discard() {
-		preview = null;
-	}
 
 	async function saveKey() {
 		const key = keyDraft.trim();
@@ -84,7 +47,7 @@
 
 	async function forgetKey() {
 		await runMutation(() => clearAssistantKey(), { success: 'Key forgotten' });
-		preview = null;
+		assistant.discard();
 	}
 
 	function formatMacro(key: (typeof MACRO_KEYS)[number], value: number): string {
@@ -140,19 +103,23 @@
 			<textarea
 				rows="3"
 				placeholder="next 4 days I have 40 g less whey"
-				bind:value={request}
+				bind:value={assistant.request}
 			></textarea>
 		</label>
 		<div class="row spread">
 			<div class="row examples">
 				{#each examples as example (example)}
-					<button class="ghost pill-button small" onclick={() => (request = example)}>
+					<button class="ghost pill-button small" onclick={() => (assistant.request = example)}>
 						{example}
 					</button>
 				{/each}
 			</div>
-			<button class="primary" disabled={busy || request.trim() === ''} onclick={ask}>
-				{busy ? 'Thinking…' : 'Ask'}
+			<button
+				class="primary"
+				disabled={assistant.asking || assistant.request.trim() === ''}
+				onclick={() => assistant.ask()}
+			>
+				{assistant.asking ? 'Thinking…' : 'Ask'}
 			</button>
 		</div>
 	</section>
@@ -232,9 +199,11 @@
 		<div class="row spread">
 			<span class="small muted">{summary.label}</span>
 			<div class="row">
-				<button onclick={discard}>Discard</button>
+				<button onclick={() => assistant.discard()}>Discard</button>
 				{#if !summary.isEmpty}
-					<button class="primary" disabled={busy} onclick={apply}>Apply</button>
+					<button class="primary" disabled={assistant.applying} onclick={() => assistant.apply()}>
+						Apply
+					</button>
 				{/if}
 			</div>
 		</div>
