@@ -6,36 +6,52 @@
 	import { formatKcal } from '$lib/domain/format';
 	import { impliedEnergyKcal } from '$lib/domain/macros';
 	import { formatKilograms, formatRate } from '$lib/domain/weight';
+	import { forgetOnSave, keepDraft } from '$lib/memory.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
+	type Figures = {
+		energyKcal: number | null;
+		proteinG: number | null;
+		fatG: number | null;
+		carbohydratesG: number | null;
+	};
+
+	// Kept against the targets it was typed over, so a save starts the next visit clean.
+	const draft = untrack(() => keepDraft<Figures>(`targets:${data.targets?.updatedAt ?? 'none'}`));
 	const seed = untrack(() => data.targets?.macros);
-	let energyKcal = $state<number | null>(seed?.energyKcal ?? null);
-	let proteinG = $state<number | null>(seed?.proteinG ?? null);
-	let fatG = $state<number | null>(seed?.fatG ?? null);
-	let carbohydratesG = $state<number | null>(seed?.carbohydratesG ?? null);
+	draft.value ??= {
+		energyKcal: seed?.energyKcal ?? null,
+		proteinG: seed?.proteinG ?? null,
+		fatG: seed?.fatG ?? null,
+		carbohydratesG: seed?.carbohydratesG ?? null,
+	};
+	const form = draft.value;
 	let busy = $state(false);
 	let confirmingReset = $state(false);
 
 	// Four independent numbers can quietly disagree; saying so informs and blocks nothing.
-	const implied = $derived(
-		proteinG === null || fatG === null || carbohydratesG === null
-			? null
-			: impliedEnergyKcal({ energyKcal: 0, proteinG, fatG, carbohydratesG }),
-	);
+	const implied = $derived.by(() => {
+		const { proteinG, fatG, carbohydratesG } = form;
+		if (proteinG === null || fatG === null || carbohydratesG === null) return null;
+		return impliedEnergyKcal({ energyKcal: 0, proteinG, fatG, carbohydratesG });
+	});
 	const disagrees = $derived(
-		implied !== null && energyKcal !== null && Math.abs(implied - energyKcal) > energyKcal * 0.05,
+		implied !== null &&
+			form.energyKcal !== null &&
+			Math.abs(implied - form.energyKcal) > form.energyKcal * 0.05,
 	);
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		const { energyKcal, proteinG, fatG, carbohydratesG } = form;
 		if (energyKcal === null || proteinG === null || fatG === null || carbohydratesG === null) {
 			return;
 		}
 		const macros = { energyKcal, proteinG, fatG, carbohydratesG };
 		busy = true;
-		await runMutation(() => setTargets(macros), { success: 'Targets saved' });
+		await forgetOnSave(draft, runMutation(() => setTargets(macros), { success: 'Targets saved' }));
 		busy = false;
 	}
 
@@ -56,15 +72,15 @@
 
 <form class="card stack" onsubmit={submit}>
 	<div class="grid-2">
-		<NumberField label="Energy" suffix="kcal" bind:value={energyKcal} required />
-		<NumberField label="Protein" suffix="g" bind:value={proteinG} required />
-		<NumberField label="Fat" suffix="g" bind:value={fatG} required />
-		<NumberField label="Carbs" suffix="g" bind:value={carbohydratesG} required />
+		<NumberField label="Energy" suffix="kcal" bind:value={form.energyKcal} required />
+		<NumberField label="Protein" suffix="g" bind:value={form.proteinG} required />
+		<NumberField label="Fat" suffix="g" bind:value={form.fatG} required />
+		<NumberField label="Carbs" suffix="g" bind:value={form.carbohydratesG} required />
 	</div>
-	{#if disagrees && implied !== null && energyKcal !== null}
+	{#if disagrees && implied !== null && form.energyKcal !== null}
 		<p class="small muted">
 			Protein, fat and carbs add up to {formatKcal(implied)}, while the energy target is
-			{formatKcal(energyKcal)}. Nothing is blocked by this.
+			{formatKcal(form.energyKcal)}. Nothing is blocked by this.
 		</p>
 	{/if}
 	<div class="row end">
@@ -72,10 +88,10 @@
 			class="primary"
 			type="submit"
 			disabled={busy ||
-				energyKcal === null ||
-				proteinG === null ||
-				fatG === null ||
-				carbohydratesG === null}>Save</button
+				form.energyKcal === null ||
+				form.proteinG === null ||
+				form.fatG === null ||
+				form.carbohydratesG === null}>Save</button
 		>
 	</div>
 </form>

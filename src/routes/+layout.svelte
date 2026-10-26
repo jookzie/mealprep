@@ -6,6 +6,7 @@
 	import Target from '@lucide/svelte/icons/target';
 	import Utensils from '@lucide/svelte/icons/utensils';
 	import Wheat from '@lucide/svelte/icons/wheat';
+	import { afterNavigate } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import ScanOverlay from '$lib/components/ScanOverlay.svelte';
 	import Toaster from '$lib/components/Toaster.svelte';
@@ -25,8 +26,28 @@
 		{ href: '/targets', label: 'Targets', icon: Target },
 	];
 
+	function within(pathname: string, href: string): boolean {
+		return pathname === href || pathname.startsWith(`${href}/`);
+	}
+
 	function isActive(href: string): boolean {
-		return page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
+		return within(page.url.pathname, href);
+	}
+
+	/*
+	 * Where each section was left, so a tab returns to the form or detail the user was on
+	 * rather than to the top of the section. Tapping the active tab still goes to the top.
+	 */
+	let left = $state<Record<string, string>>({});
+
+	afterNavigate(({ to }) => {
+		if (!to) return;
+		const section = sections.find((candidate) => within(to.url.pathname, candidate.href));
+		if (section) left[section.href] = `${to.url.pathname}${to.url.search}`;
+	});
+
+	function tabTarget(href: string): string {
+		return isActive(href) ? href : (left[href] ?? href);
 	}
 </script>
 
@@ -40,7 +61,7 @@
 
 <nav class="tabs" aria-label="Sections">
 	{#each sections as section (section.href)}
-		<a href={section.href} aria-current={isActive(section.href) ? 'page' : undefined}>
+		<a href={tabTarget(section.href)} aria-current={isActive(section.href) ? 'page' : undefined}>
 			<section.icon size={22} aria-hidden="true" />
 			<span>{section.label}</span>
 		</a>

@@ -2,14 +2,17 @@
 	import { importProduct, runMutation } from '$lib/api';
 	import OffCredit from '$lib/components/OffCredit.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import ProductForm from '$lib/components/ProductForm.svelte';
+	import ProductForm, { type ProductFormState } from '$lib/components/ProductForm.svelte';
 	import { seedFromEntry } from '$lib/domain/catalogue';
 	import { MACRO_LABELS } from '$lib/domain/macros';
+	import { forgetOnSave, keepDraft } from '$lib/memory.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
 	const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+
+	const draft = $derived(keepDraft<ProductFormState>(`import:${data.code}`));
 </script>
 
 <PageHeader title="Review import" subtitle="Barcode {data.code}" back="/products" />
@@ -57,12 +60,16 @@
 	{#key entry.code}
 		<ProductForm
 			initial={seedFromEntry(entry)}
+			{draft}
 			submitLabel="Import product"
-			onSubmit={(draft) =>
-				runMutation(() => importProduct(entry.code, draft), {
-					success: 'Product imported',
-					redirectTo: (product) => `/products/${product.id}`,
-				})}
+			onSubmit={(submitted) =>
+				forgetOnSave(
+					draft,
+					runMutation(() => importProduct(entry.code, submitted), {
+						success: 'Product imported',
+						redirectTo: (product) => `/products/${product.id}`,
+					}),
+				)}
 		/>
 	{/key}
 
