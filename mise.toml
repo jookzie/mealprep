@@ -65,6 +65,17 @@ description = "Run the Rust tests"
 dir = "{{config_root}}"
 run = "cargo test --workspace"
 
+# Opt-in, for the edit-and-rerun loop on a laptop: blaze (indexable-inc/blaze, formerly
+# ra-jit) keeps the workspace compiled in memory and rebuilds an edited function in
+# milliseconds. It is never the check: it builds with its own pinned nightly rather than
+# the toolchain above, its borrow checker is incomplete, and it cannot build the Android
+# target, so CI, `rust:test` and every release stay on cargo. Install it first, see
+# https://github.com/indexable-inc/blaze#install.
+[tasks."rust:test:blaze"]
+description = "Run the Rust tests through blaze for fast rebuilds after an edit (local, opt-in)"
+dir = "{{config_root}}"
+run = "blaze test --workspace"
+
 [tasks."frontend:install"]
 description = "Install the frontend dependencies"
 dir = "{{config_root}}"
