@@ -270,7 +270,8 @@ app's private storage, which is the app root rather than `files/`.
 `mise.toml` holds the tasks. `cargo fmt` and `cargo clippy` cover Rust, `svelte-check` is the
 frontend's contract check, `cargo test` covers the domain rules and the SQLite integration,
 and `bun test src` covers the pure frontend modules. `mise run autocommit` drafts a commit
-message from the staged diff and opens it for review.
+message from the staged diff and opens it for review. `mise run rust:test:blaze` reruns the Rust tests
+through blaze for a fast local edit loop; it is opt-in and never the check, which stays cargo's.
 
 `mise run android:build:release` builds the signed arm64 APK. Gradle takes the keystore from
 `src-tauri/gen/android/keystore.properties`, which is untracked and holds `storeFile`,
