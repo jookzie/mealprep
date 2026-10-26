@@ -68,6 +68,13 @@ the frontend declares.
 Commands are the whole public surface. Anything the frontend needs is a command; anything
 else stays in Rust.
 
+Export and import move the whole database file, which is the store's concern rather than
+the rules', so those commands take the `SqliteStore` itself, managed beside `AppState`.
+`prepare_import` checks a staged copy — integrity, and every applied migration known to this
+build with the same checksum — and folds its write-ahead log in before the copy is renamed
+over the database. The application then exits, for the reason the acceptance reset does: the
+open store holds the old file by descriptor.
+
 ## Frontend layout
 ```
 src/

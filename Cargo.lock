@@ -2327,6 +2327,7 @@ dependencies = [
  "tauri-plugin-barcode-scanner",
  "tauri-plugin-opener",
  "thiserror 2.0.20",
+ "time",
  "uuid",
 ]
 

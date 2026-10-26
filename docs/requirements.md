@@ -136,7 +136,7 @@ Nutrients are shown as the four macros, with the full nutrient set behind an exp
 | Day plan detail | `/day-plans/[dayPlanId]` | `DP-4`, `TG-2`, `TG-3`, `CO-2` |
 | Edit day plan | `/day-plans/[dayPlanId]/edit` | `DP-5`, `DP-6` |
 | Calendar | `/calendar` | `CL-1`–`CL-5`, `TG-2`, `TG-3` |
-| Targets | `/targets` | `TG-1`, `WT-6` — the macro targets, and the weight trend beside them |
+| Targets | `/targets` | `TG-1`, `WT-6`, `DT-1`–`DT-4` — the macro targets, the weight trend beside them, and exporting or importing the data |
 | Weight | `/weight` | `WT-1`–`WT-7` — quick log, the graph, and the weigh-in history |
 | Assistant | `/assistant` | `AS-1`–`AS-10` — the request, the preview with Apply or Discard, the API key, and what has been applied |
 
@@ -332,6 +332,22 @@ what would change on each date. The user applies it, or discards it.
 - `AS-8` The system shall record every applied request — what was asked, what the assistant said, the operations, what each date pointed at before, and when — and shall show it. The record shall be enough to reverse the change by hand.
 - `AS-9` The system shall require the user's own API key for the assistant, shall keep it on the device, shall never return it in full, and shall send nothing to the assistant while there is none.
 - `AS-10` Adding a kind of operation shall not change how a proposal is previewed, confirmed or applied.
+
+### 4.13 Data export and import
+**Description and priority.** Moving all of the user's data in and out of the application as
+one file. High: the database is otherwise a private file on the phone, so an uninstall or a
+second install is a loss with no way back. New in this version.
+
+**Stimulus/response.** Export writes a copy of everything to the application's own folder in
+shared storage, which a computer reaches over USB or adb. Import reads one named file from
+that folder, checks it, keeps a copy of what it replaces, swaps it in and closes the
+application.
+
+**Functional requirements.**
+- `DT-1` The system shall export the whole database as one self-contained file, consistent at the moment it is taken, without closing the application.
+- `DT-2` The system shall check a file before importing it — an intact SQLite file whose applied migrations are all ones this version carries — and shall refuse it, replacing nothing, otherwise. A file from an older version shall be accepted and migrated as an update would be.
+- `DT-3` The system shall export the current data before an import replaces it, and shall ask for confirmation first.
+- `DT-4` The system shall say where the folder is, and that the folder is removed with the application.
 
 ## 5. Other non-functional requirements
 

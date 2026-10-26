@@ -70,8 +70,16 @@ built on every push.
 
 ## The data-safety rules
 
-The database is a private file on the phone and nothing exports it, so an uninstall is
-permanent data loss. Three things keep an update from being that uninstall:
+The database is a private file on the phone, so an uninstall is permanent data loss unless
+an export was copied off the phone first. **Your data** on the Targets screen exports it to
+`Android/data/<application id>/files/Download` and imports `mealprep-import.db` from there;
+that folder is deleted with the app, so copy an export off the phone
+(`adb pull /sdcard/Android/data/com.mertan.mealprep/files/Download/<file>`) for it to count as
+a backup. Moving data between installs — a debug build to the release, say — is an export
+or an `android:db:pull`, an `adb push` into the target's folder as `mealprep-import.db`,
+and an import there.
+
+Three things keep an update from being that uninstall:
 
 - **The same application id.** `com.mertan.mealprep`, which is what is installed today.
   A changed id is a different app with a different, empty data directory.

@@ -117,3 +117,13 @@ export const isAcceptanceBuild = () => call<boolean>('acceptance_build').catch((
  * The promise never settles on success, because the process is gone before it can.
  */
 export const resetDemoData = () => call<void>('reset_demo_data');
+
+/** The folder exports land in and the import is read from, as a path to show. */
+export const loadDatabaseFolder = () => call<string>('database_folder');
+/** Writes a copy of everything to the folder and answers the file's name. */
+export const exportDatabase = () => call<string>('export_database');
+/**
+ * Replaces everything with `mealprep-import.db` from the folder, after exporting what is
+ * there now, and closes the app. Like `resetDemoData`, it never settles on success.
+ */
+export const importDatabase = () => call<void>('import_database');

@@ -17,8 +17,10 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            let state = tauri::async_runtime::block_on(setup::open(app.handle()))?;
+            let (state, store) = tauri::async_runtime::block_on(setup::open(app.handle()))?;
             app.manage(state);
+            // The store on its own as well, for the commands that move the whole file.
+            app.manage(store);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -40,6 +42,9 @@ pub fn run() {
             command::category::delete_category,
             command::category::list_categories,
             command::category::rename_category,
+            command::database::database_folder,
+            command::database::export_database,
+            command::database::import_database,
             command::day_plan::create_day_plan,
             command::day_plan::delete_day_plan,
             command::day_plan::get_day_plan,
