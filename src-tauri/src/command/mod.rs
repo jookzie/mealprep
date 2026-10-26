@@ -3,6 +3,7 @@ pub mod acceptance;
 pub mod assistant;
 pub mod calendar;
 pub mod category;
+pub mod database;
 pub mod day_plan;
 pub mod meal;
 pub mod product;

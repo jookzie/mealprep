@@ -11,6 +11,7 @@ mod meal;
 mod product;
 mod row;
 mod targets;
+mod transfer;
 mod weight;
 
 use std::{path::Path, str::FromStr};
@@ -23,6 +24,7 @@ use sqlx::{
 };
 
 use self::row::internal;
+pub use self::transfer::prepare_import;
 
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 

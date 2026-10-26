@@ -34,7 +34,10 @@ pub fn database_path(app: &AppHandle<impl Runtime>) -> Result<PathBuf, SetupErro
 }
 
 /// Opens the database in the application's data directory, creating both when missing.
-pub async fn open(app: &AppHandle<impl Runtime>) -> Result<AppState, SetupError> {
+///
+/// The store comes back beside the rules too: exporting and importing move the whole file,
+/// which is the store's business rather than the rules'.
+pub async fn open(app: &AppHandle<impl Runtime>) -> Result<(AppState, SqliteStore), SetupError> {
     let path = database_path(app)?;
 
     // The acceptance environment starts from the demo dataset rather than from an empty
@@ -51,5 +54,5 @@ pub async fn open(app: &AppHandle<impl Runtime>) -> Result<AppState, SetupError>
     // The assistant holds no key: the rules read the user's own out of the store and hand
     // it over per call, so there is no credential in the application's state.
     let assistant = Anthropic::new()?;
-    Ok(Mealprep::new(store, catalogue, assistant))
+    Ok((Mealprep::new(store.clone(), catalogue, assistant), store))
 }

@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { resetDemoData, runMutation, setTargets } from '$lib/api';
+	import {
+		exportDatabase,
+		importDatabase,
+		resetDemoData,
+		runMutation,
+		setTargets,
+	} from '$lib/api';
 	import NumberField from '$lib/components/NumberField.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { formatKcal } from '$lib/domain/format';
@@ -30,6 +36,8 @@
 	const form = draft.value;
 	let busy = $state(false);
 	let confirmingReset = $state(false);
+	let confirmingImport = $state(false);
+	let exported = $state<string | null>(null);
 
 	// Four independent numbers can quietly disagree; saying so informs and blocks nothing.
 	const implied = $derived.by(() => {
@@ -52,6 +60,24 @@
 		const macros = { energyKcal, proteinG, fatG, carbohydratesG };
 		busy = true;
 		await forgetOnSave(draft, runMutation(() => setTargets(macros), { success: 'Targets saved' }));
+		busy = false;
+	}
+
+	async function exportAll() {
+		busy = true;
+		const name = await runMutation(() => exportDatabase(), { invalidate: false });
+		busy = false;
+		if (name) exported = name;
+	}
+
+	/*
+	 * Like the reset below, a successful import closes the app, so only a failure comes
+	 * back here — and a failure has replaced nothing.
+	 */
+	async function importAll() {
+		confirmingImport = false;
+		busy = true;
+		await runMutation(() => importDatabase(), { invalidate: false });
 		busy = false;
 	}
 
@@ -117,6 +143,43 @@
 </a>
 
 <!--
+	The database is a private file on the phone, so this is the only way it leaves or
+	arrives: one file in the app's own folder in shared storage, which a computer reaches
+	over USB or adb. Android deletes that folder with the app, which the text says.
+-->
+<section class="card stack" aria-label="Your data">
+	<div>
+		<strong>Your data</strong>
+		<p class="small muted">
+			Export writes a copy of everything to <code class="path">{data.databaseFolder}</code>. Copy
+			it off the phone to keep it: the folder is removed with the app.
+		</p>
+		<p class="small muted">
+			Import replaces everything with <code>mealprep-import.db</code> from that folder. What is
+			here now is exported first, and the app closes; reopen it afterwards.
+		</p>
+	</div>
+	{#if exported}
+		<p class="small" role="status">Exported as <code>{exported}</code>.</p>
+	{/if}
+	<div class="row end">
+		{#if confirmingImport}
+			<button type="button" class="ghost" onclick={() => (confirmingImport = false)}>
+				Cancel
+			</button>
+			<button type="button" class="danger" disabled={busy} onclick={importAll}>
+				Replace everything
+			</button>
+		{:else}
+			<button type="button" disabled={busy} onclick={() => (confirmingImport = true)}>
+				Import
+			</button>
+			<button type="button" disabled={busy} onclick={exportAll}>Export</button>
+		{/if}
+	</div>
+</section>
+
+<!--
 	Acceptance builds only: `data.acceptance` is false whenever the reset command is not
 	registered, which is every production build. It sits with the targets because this is
 	the settings-shaped screen, and behind a confirmation because it discards everything.
@@ -147,3 +210,10 @@
 		</div>
 	</section>
 {/if}
+
+<style>
+	/* A long path has no spaces to wrap at; on a phone it must break rather than widen the page. */
+	.path {
+		overflow-wrap: anywhere;
+	}
+</style>
