@@ -11,7 +11,12 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    // The dialog and fs plugins are driven from Rust only, by the export and import
+    // commands, so the webview is granted none of their permissions.
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init());
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
 
@@ -42,7 +47,6 @@ pub fn run() {
             command::category::delete_category,
             command::category::list_categories,
             command::category::rename_category,
-            command::database::database_folder,
             command::database::export_database,
             command::database::import_database,
             command::day_plan::create_day_plan,

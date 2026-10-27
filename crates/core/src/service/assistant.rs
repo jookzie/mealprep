@@ -6,12 +6,16 @@
 //! the operations the user confirmed, re-checked from scratch, because a confirmation
 //! comes back over the IPC bridge and is no more trustworthy than the first answer.
 //!
-//! Checking lowers the operations onto [`DayChange`], one per date. Everything after that
-//! — the preview, the writes, the log — is written against `DayChange` and knows nothing
-//! about which operation produced it, which is what keeps a new operation down to one
-//! enum variant, one arm of [`edit`] and one tool schema in the adapter.
+//! Checking lowers the operations onto [`DayChange`], one per date, and [`EntityChange`],
+//! one per product, meal or day plan created or changed. Everything after that — the
+//! preview, the writes, the log — is written against those and knows nothing about which
+//! operation produced them, which is what keeps a new operation down to one enum variant,
+//! one arm of [`edit`] or [`edit_entity`] and one tool schema in the adapter.
+//!
+//! Entity edits are checked first, against a copy of the data they then change, so the
+//! day edits of the same proposal can name what they create and see what they change.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use time::{Date, Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -24,10 +28,11 @@ use super::{
 use crate::{
     Entity, Error, Result,
     domain::{
-        AppliedChange, AssistantContext, AssistantKeyStatus, AssistantRecord, AssistantRecordDraft,
-        ContextDay, ContextItem, ContextMeal, ContextPlan, ContextProduct, DayPlan, DayPlanDraft,
-        DayPlanItem, ItemRef, Macros, Operation, Preview, PreviewDay, Product, Proposal, Serving,
-        format_iso_date,
+        AppliedChange, AppliedEntityChange, AssistantContext, AssistantKeyStatus, AssistantRecord,
+        AssistantRecordDraft, ContextDay, ContextItem, ContextMeal, ContextPlan, ContextProduct,
+        DayPlan, DayPlanDraft, DayPlanItem, EntityAction, EntityKind, ItemRef, Macros, Meal,
+        MealDraft, Operation, Preview, PreviewDay, PreviewEntity, Product, ProductDraft, Proposal,
+        Serving, format_iso_date,
     },
     store::{
         Assistant, AssistantStore, CalendarStore, DayPlanStore, MealStore, ProductStore,
@@ -104,6 +109,51 @@ impl DayChange {
     }
 }
 
+/// What one product, meal or day plan becomes once its operation has been checked.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EntityChange {
+    pub action: EntityAction,
+    /// The entity's id; for a create, the provisional one the model picked.
+    pub id: Uuid,
+    /// The whole entity as it is to be written, the fields an update left alone included.
+    pub draft: EntityDraft,
+    /// What changes, in plain words.
+    pub changes: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum EntityDraft {
+    Product(ProductDraft),
+    Meal(MealDraft),
+    DayPlan(DayPlanDraft),
+}
+
+impl EntityDraft {
+    fn kind(&self) -> EntityKind {
+        match self {
+            Self::Product(_) => EntityKind::Product,
+            Self::Meal(_) => EntityKind::Meal,
+            Self::DayPlan(_) => EntityKind::DayPlan,
+        }
+    }
+
+    fn label(&self) -> &str {
+        match self {
+            Self::Product(draft) => &draft.name,
+            Self::Meal(draft) => &draft.label,
+            Self::DayPlan(draft) => &draft.label,
+        }
+    }
+}
+
+/// Everything a proposal comes to: the entities written first, then the dates, and the
+/// data as it stands once the entity edits are in.
+struct Resolved {
+    entities: Vec<EntityChange>,
+    days: Vec<DayChange>,
+    after: World,
+}
+
 impl PlannedChange {
     fn of(plan: &DayPlan) -> Self {
         Self {
@@ -129,6 +179,7 @@ impl PlannedChange {
 // the data a request is checked against
 
 /// The slice of the user's data a request could be about, loaded once per call.
+#[derive(Clone)]
 struct World {
     today: Date,
     targets: Option<Macros>,
@@ -138,9 +189,10 @@ struct World {
     /// window's dates point at.
     plans: HashMap<Uuid, DayPlan>,
     /// The plans that can be put on a date, in list order. A copy is never one of them.
-    assignable: Vec<ContextPlan>,
-    meal_list: Vec<ContextMeal>,
-    product_list: Vec<ContextProduct>,
+    assignable: Vec<Uuid>,
+    /// The meals and products in list order, for the context.
+    meal_order: Vec<Uuid>,
+    product_order: Vec<Uuid>,
     meals: MealIndex,
     products: ProductIndex,
 }
@@ -201,10 +253,123 @@ impl World {
             today: self.today,
             targets: self.targets,
             days,
-            plans: self.assignable.clone(),
-            meals: self.meal_list.clone(),
-            products: self.product_list.clone(),
+            plans: self
+                .assignable
+                .iter()
+                .filter_map(|id| self.plans.get(id))
+                .map(|plan| ContextPlan {
+                    id: plan.id,
+                    label: plan.label.clone(),
+                    items: plan.items.clone(),
+                })
+                .collect(),
+            meals: self
+                .meal_order
+                .iter()
+                .filter_map(|id| self.meals.get(id))
+                .map(|meal| ContextMeal {
+                    id: meal.entity.id,
+                    label: meal.entity.label.clone(),
+                    servings: meal.entity.servings.clone(),
+                })
+                .collect(),
+            products: self
+                .product_order
+                .iter()
+                .filter_map(|id| self.products.get(id))
+                .map(|product| ContextProduct {
+                    id: product.id,
+                    name: product.name.clone(),
+                    unit: product.unit,
+                    macros: product.macros,
+                })
+                .collect(),
         }
+    }
+
+    /// Re-derives every meal's totals, after a product they may hold has changed.
+    fn rederive_meals(&mut self) {
+        let products = &self.products;
+        for meal in self.meals.values_mut() {
+            *meal = derive::derive_meal(meal.entity.clone(), products);
+        }
+    }
+
+    /// How many dates in view are on a plan that holds the entity, directly or through a
+    /// meal — the dates an update to it reaches.
+    fn dates_using(&self, kind: EntityKind, id: Uuid) -> usize {
+        self.calendar
+            .iter()
+            .filter(|(_, plan_id)| match kind {
+                EntityKind::DayPlan => **plan_id == id,
+                EntityKind::Meal | EntityKind::Product => {
+                    self.plans.get(plan_id).is_some_and(|plan| {
+                        plan.items.iter().any(|item| self.item_uses(item, kind, id))
+                    })
+                }
+            })
+            .count()
+    }
+
+    fn item_uses(&self, item: &DayPlanItem, kind: EntityKind, id: Uuid) -> bool {
+        match (item, kind) {
+            (DayPlanItem::Meal { meal_id }, EntityKind::Meal) => *meal_id == id,
+            (DayPlanItem::Meal { meal_id }, EntityKind::Product) => {
+                self.meals.get(meal_id).is_some_and(|meal| {
+                    meal.entity
+                        .servings
+                        .iter()
+                        .any(|serving| serving.product_id == id)
+                })
+            }
+            (DayPlanItem::Product { product_id, .. }, EntityKind::Product) => *product_id == id,
+            _ => false,
+        }
+    }
+
+    /// "80 g Oats, 30 g Whey", for a change line.
+    fn servings_text(&self, servings: &[Serving]) -> String {
+        servings
+            .iter()
+            .map(|serving| match self.products.get(&serving.product_id) {
+                Some(product) => format!("{} {} {}", serving.amount, product.unit, product.name),
+                None => format!("{} of a removed product", serving.amount),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// "Porridge, 30 g Whey", for a change line.
+    fn items_text(&self, items: &[DayPlanItem]) -> String {
+        items
+            .iter()
+            .map(|item| match item {
+                DayPlanItem::Meal { meal_id } => self.meals.get(meal_id).map_or_else(
+                    || "a removed meal".to_owned(),
+                    |meal| meal.entity.label.clone(),
+                ),
+                DayPlanItem::Product { product_id, amount } => self.servings_text(&[Serving {
+                    product_id: *product_id,
+                    amount: *amount,
+                }]),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// Fails unless every meal and product the items name exists.
+    fn check_items(&self, items: &[DayPlanItem]) -> Result<()> {
+        for item in items {
+            match item {
+                DayPlanItem::Meal { meal_id } => {
+                    self.meal_label(*meal_id)?;
+                }
+                DayPlanItem::Product { product_id, .. } => {
+                    self.product(*product_id)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The order as the model sees it: ids with the names they go by, so a request about
@@ -289,8 +454,8 @@ where
             operations: answer.operations,
         };
 
-        let changes = resolve(&world, &proposal.request, &proposal.operations)?;
-        Ok(preview(&world, proposal, &changes))
+        let resolved = resolve(&world, &proposal.request, &proposal.operations)?;
+        Ok(preview(&world, proposal, &resolved))
     }
 }
 
@@ -306,14 +471,22 @@ where
     pub async fn apply_assistant_edit(&self, proposal: Proposal) -> Result<AssistantRecord> {
         let request = validate::assistant_request(proposal.request)?;
         let world = self.load_world().await?;
-        let changes = resolve(&world, &request, &proposal.operations)?;
-        if changes.is_empty() {
+        let resolved = resolve(&world, &request, &proposal.operations)?;
+        if resolved.entities.is_empty() && resolved.days.is_empty() {
             return Err(invalid("there is nothing to apply".to_owned()));
         }
 
-        let mut applied = Vec::with_capacity(changes.len());
-        for change in &changes {
-            applied.push(self.write_day(change).await?);
+        // Entities first, so a date can be pointed at a plan or meal this proposal creates;
+        // each create's provisional id is mapped to the one the store assigned.
+        let mut ids = HashMap::new();
+        let mut entity_changes = Vec::with_capacity(resolved.entities.len());
+        for change in &resolved.entities {
+            entity_changes.push(self.write_entity(change, &mut ids).await?);
+        }
+
+        let mut applied = Vec::with_capacity(resolved.days.len());
+        for change in &resolved.days {
+            applied.push(self.write_day(&remap_day(change, &ids)).await?);
         }
 
         let draft = AssistantRecordDraft {
@@ -321,8 +494,65 @@ where
             rationale: proposal.rationale,
             operations: proposal.operations,
             changes: applied,
+            entity_changes,
         };
         self.store.record_assistant_request(&draft).await
+    }
+
+    /// Writes one product, meal or day plan, naming what earlier creates of the same
+    /// proposal made by the ids the store gave them.
+    async fn write_entity(
+        &self,
+        change: &EntityChange,
+        ids: &mut HashMap<Uuid, Uuid>,
+    ) -> Result<AppliedEntityChange> {
+        let create = change.action == EntityAction::Create;
+        let id = match &change.draft {
+            EntityDraft::Product(draft) if create => {
+                self.store.create_product(draft, None).await?.id
+            }
+            EntityDraft::Product(draft) => self.store.update_product(change.id, draft).await?.id,
+            EntityDraft::Meal(draft) => {
+                let draft = MealDraft {
+                    servings: draft
+                        .servings
+                        .iter()
+                        .map(|serving| Serving {
+                            product_id: remap(serving.product_id, ids),
+                            amount: serving.amount,
+                        })
+                        .collect(),
+                    ..draft.clone()
+                };
+                if create {
+                    self.store.create_meal(&draft).await?.id
+                } else {
+                    self.store.update_meal(change.id, &draft).await?.id
+                }
+            }
+            EntityDraft::DayPlan(draft) => {
+                let draft = DayPlanDraft {
+                    items: remap_items(&draft.items, ids),
+                    ..draft.clone()
+                };
+                if create {
+                    self.store.create_day_plan(&draft).await?.id
+                } else {
+                    self.store.update_day_plan(change.id, &draft).await?.id
+                }
+            }
+        };
+        if create {
+            ids.insert(change.id, id);
+        }
+
+        Ok(AppliedEntityChange {
+            kind: change.draft.kind(),
+            action: change.action,
+            id,
+            label: change.draft.label().to_owned(),
+            changes: change.changes.clone(),
+        })
     }
 
     /// Writes one date, detaching it onto its own copy of its plan when the edit needs it.
@@ -387,13 +617,7 @@ where
             .collect();
         let copies = self.store.list_day_plans_by_ids(&missing).await?;
 
-        let assignable = kept
-            .iter()
-            .map(|plan| ContextPlan {
-                id: plan.id,
-                label: plan.label.clone(),
-            })
-            .collect();
+        let assignable = kept.iter().map(|plan| plan.id).collect();
         let plans: HashMap<Uuid, DayPlan> = kept
             .into_iter()
             .chain(copies)
@@ -401,22 +625,9 @@ where
             .collect();
 
         let meals = self.store.list_meals().await?;
-        let meal_list = meals
-            .iter()
-            .map(|meal| ContextMeal {
-                id: meal.id,
-                label: meal.label.clone(),
-            })
-            .collect();
+        let meal_order = meals.iter().map(|meal| meal.id).collect();
         let products = self.store.list_products().await?;
-        let product_list = products
-            .iter()
-            .map(|product| ContextProduct {
-                id: product.id,
-                name: product.name.clone(),
-                unit: product.unit,
-            })
-            .collect();
+        let product_order = products.iter().map(|product| product.id).collect();
 
         let products = derive::index_products(products);
         let meals: MealIndex = meals
@@ -437,8 +648,8 @@ where
                 .collect(),
             plans,
             assignable,
-            meal_list,
-            product_list,
+            meal_order,
+            product_order,
             meals,
             products,
         })
@@ -498,29 +709,444 @@ fn key_status(key: Option<&str>) -> AssistantKeyStatus {
     }
 }
 
-/// Checks every operation against the data and says what each date it names becomes.
+/// Checks every operation against the data and says what each entity and date it names
+/// becomes.
 ///
-/// Operations are checked in the order they were proposed and compose: two corrections to
-/// the same day both land, rather than the second overwriting the first's result.
-fn resolve(world: &World, request: &str, operations: &[Operation]) -> Result<Vec<DayChange>> {
-    let past_allowed = validate::past_dates_requested(request, world.today);
-    let mut changes: BTreeMap<Date, DayChange> = BTreeMap::new();
+/// Entity edits go first, products before meals before day plans, so each can name what
+/// an earlier one creates; they change a copy of the data, which the day edits are then
+/// checked against. Day edits are checked in the order they were proposed and compose:
+/// two corrections to the same day both land, rather than the second overwriting the
+/// first's result.
+fn resolve(world: &World, request: &str, operations: &[Operation]) -> Result<Resolved> {
+    let mut after = world.clone();
+    let mut created = HashSet::new();
+    let mut entity_operations: Vec<&Operation> = operations
+        .iter()
+        .filter(|operation| operation.entity().is_some())
+        .collect();
+    // Stable, so two edits to one kind keep the order they were proposed in.
+    entity_operations.sort_by_key(|operation| operation.entity());
+    let mut entities = Vec::with_capacity(entity_operations.len());
+    for operation in entity_operations {
+        entities.push(edit_entity(&mut after, operation, &mut created)?);
+    }
 
+    let past_allowed = validate::past_dates_requested(request, after.today);
+    let mut changes: BTreeMap<Date, DayChange> = BTreeMap::new();
     for operation in operations {
-        for date in checked_dates(world, operation, past_allowed)? {
+        for date in checked_dates(&after, operation, past_allowed)? {
             let change = changes
                 .entry(date)
-                .or_insert_with(|| initial_change(world, date));
-            edit(world, operation, change)?;
+                .or_insert_with(|| initial_change(&after, date));
+            edit(&after, operation, change)?;
         }
     }
 
     // A date an operation named but did not change is not a change to confirm.
-    let changes = changes
+    let days = changes
         .into_values()
         .filter(|change| !change.changes.is_empty())
         .collect();
-    Ok(changes)
+    Ok(Resolved {
+        entities,
+        days,
+        after,
+    })
+}
+
+/// What one entity edit creates or changes, applied to `world` so the edits after it see it.
+///
+/// This is the only place an entity edit's meaning is written down, as [`edit`] is for day
+/// edits. What it produces is the whole entity to write, checked by the same rules the
+/// screens' own forms are.
+fn edit_entity(
+    world: &mut World,
+    operation: &Operation,
+    created: &mut HashSet<Uuid>,
+) -> Result<EntityChange> {
+    let (action, id, draft, changes) = match operation {
+        Operation::CreateProduct { new_id, product } => {
+            claim_new_id(world, created, *new_id)?;
+            let draft = validate::product(product.clone())?;
+            world.products.insert(
+                *new_id,
+                Product {
+                    id: *new_id,
+                    name: draft.name.clone(),
+                    unit: draft.unit,
+                    macros: draft.macros,
+                    nutrients: draft.nutrients.clone(),
+                    cost: draft.cost,
+                    brand: draft.brand.clone(),
+                    source_code: None,
+                    created_at: OffsetDateTime::UNIX_EPOCH,
+                    updated_at: OffsetDateTime::UNIX_EPOCH,
+                },
+            );
+            world.product_order.push(*new_id);
+            let line = format!("New product, figures per 100 {}", draft.unit);
+            (
+                EntityAction::Create,
+                *new_id,
+                EntityDraft::Product(draft),
+                vec![line],
+            )
+        }
+
+        Operation::UpdateProduct {
+            product_id,
+            changes,
+        } => {
+            refuse_created(created, *product_id, "product")?;
+            let current = world.product(*product_id)?.clone();
+            let unit = current.unit;
+            let mut lines = Vec::new();
+            let mut draft = ProductDraft {
+                name: current.name.clone(),
+                unit,
+                macros: current.macros,
+                nutrients: current.nutrients.clone(),
+                cost: current.cost,
+                brand: current.brand.clone(),
+            };
+            if let Some(name) = changes.name.as_ref().filter(|name| **name != draft.name) {
+                lines.push(format!("Renamed from {} to {name}", draft.name));
+                draft.name = name.clone();
+            }
+            if let Some(brand) = changes
+                .brand
+                .as_ref()
+                .filter(|brand| draft.brand.as_ref() != Some(*brand))
+            {
+                lines.push(format!("Brand {brand}"));
+                draft.brand = Some(brand.clone());
+            }
+            let per = format!("per 100 {unit}");
+            set_figure(
+                &mut draft.macros.energy_kcal,
+                changes.energy_kcal,
+                "Energy",
+                "kcal",
+                &per,
+                &mut lines,
+            );
+            set_figure(
+                &mut draft.macros.protein_g,
+                changes.protein_g,
+                "Protein",
+                "g",
+                &per,
+                &mut lines,
+            );
+            set_figure(
+                &mut draft.macros.fat_g,
+                changes.fat_g,
+                "Fat",
+                "g",
+                &per,
+                &mut lines,
+            );
+            set_figure(
+                &mut draft.macros.carbohydrates_g,
+                changes.carbohydrates_g,
+                "Carbs",
+                "g",
+                &per,
+                &mut lines,
+            );
+            if let Some(cost) = changes.cost.filter(|cost| Some(*cost) != draft.cost) {
+                lines.push(match draft.cost {
+                    Some(was) => format!("Cost {per} {was} → {cost}"),
+                    None => format!("Cost {per} {cost}"),
+                });
+                draft.cost = Some(cost);
+            }
+            if lines.is_empty() {
+                return Err(invalid(format!(
+                    "the update changes nothing about {}",
+                    current.name
+                )));
+            }
+            let draft = validate::product(draft)?;
+            world.products.insert(
+                *product_id,
+                Product {
+                    name: draft.name.clone(),
+                    macros: draft.macros,
+                    cost: draft.cost,
+                    brand: draft.brand.clone(),
+                    ..current
+                },
+            );
+            world.rederive_meals();
+            (
+                EntityAction::Update,
+                *product_id,
+                EntityDraft::Product(draft),
+                lines,
+            )
+        }
+
+        Operation::CreateMeal { new_id, meal } => {
+            claim_new_id(world, created, *new_id)?;
+            // The categories are not in the context, so a new meal starts in none.
+            let draft = validate::meal(MealDraft {
+                category_id: None,
+                ..meal.clone()
+            })?;
+            for serving in &draft.servings {
+                world.product(serving.product_id)?;
+            }
+            let line = format!("Made of {}", world.servings_text(&draft.servings));
+            put_meal(world, *new_id, &draft, None);
+            world.meal_order.push(*new_id);
+            (
+                EntityAction::Create,
+                *new_id,
+                EntityDraft::Meal(draft),
+                vec![line],
+            )
+        }
+
+        Operation::UpdateMeal { meal_id, changes } => {
+            refuse_created(created, *meal_id, "meal")?;
+            let current = world
+                .meals
+                .get(meal_id)
+                .map(|meal| meal.entity.clone())
+                .ok_or_else(|| invalid(format!("meal {meal_id} does not exist")))?;
+            let mut lines = Vec::new();
+            let mut draft = MealDraft {
+                label: current.label.clone(),
+                category_id: current.category_id,
+                servings: current.servings.clone(),
+            };
+            if let Some(label) = changes
+                .label
+                .as_ref()
+                .filter(|label| **label != draft.label)
+            {
+                lines.push(format!("Renamed from {} to {label}", draft.label));
+                draft.label = label.clone();
+            }
+            if let Some(servings) = changes
+                .servings
+                .as_ref()
+                .filter(|servings| **servings != draft.servings)
+            {
+                for serving in servings {
+                    world.product(serving.product_id)?;
+                }
+                lines.push(format!(
+                    "Now {}, instead of {}",
+                    world.servings_text(servings),
+                    world.servings_text(&draft.servings)
+                ));
+                draft.servings = servings.clone();
+            }
+            if lines.is_empty() {
+                return Err(invalid(format!(
+                    "the update changes nothing about {}",
+                    current.label
+                )));
+            }
+            let draft = validate::meal(draft)?;
+            put_meal(world, *meal_id, &draft, Some(&current));
+            (
+                EntityAction::Update,
+                *meal_id,
+                EntityDraft::Meal(draft),
+                lines,
+            )
+        }
+
+        Operation::CreateDayPlan { new_id, day_plan } => {
+            claim_new_id(world, created, *new_id)?;
+            let draft = validate::day_plan(DayPlanDraft {
+                category_id: None,
+                ..day_plan.clone()
+            })?;
+            world.check_items(&draft.items)?;
+            let line = format!("Holds {}", world.items_text(&draft.items));
+            world.plans.insert(
+                *new_id,
+                DayPlan {
+                    id: *new_id,
+                    label: draft.label.clone(),
+                    category_id: None,
+                    source_plan_id: None,
+                    items: draft.items.clone(),
+                    created_at: OffsetDateTime::UNIX_EPOCH,
+                    updated_at: OffsetDateTime::UNIX_EPOCH,
+                },
+            );
+            world.assignable.push(*new_id);
+            (
+                EntityAction::Create,
+                *new_id,
+                EntityDraft::DayPlan(draft),
+                vec![line],
+            )
+        }
+
+        Operation::UpdateDayPlan {
+            day_plan_id,
+            changes,
+        } => {
+            refuse_created(created, *day_plan_id, "day plan")?;
+            let current = world.assignable_plan(*day_plan_id)?.clone();
+            let mut lines = Vec::new();
+            let mut draft = DayPlanDraft {
+                label: current.label.clone(),
+                category_id: current.category_id,
+                items: current.items.clone(),
+            };
+            if let Some(label) = changes
+                .label
+                .as_ref()
+                .filter(|label| **label != draft.label)
+            {
+                lines.push(format!("Renamed from {} to {label}", draft.label));
+                draft.label = label.clone();
+            }
+            if let Some(items) = changes
+                .items
+                .as_ref()
+                .filter(|items| **items != draft.items)
+            {
+                world.check_items(items)?;
+                lines.push(format!(
+                    "Now {}, instead of {}",
+                    world.items_text(items),
+                    world.items_text(&draft.items)
+                ));
+                draft.items = items.clone();
+            }
+            if lines.is_empty() {
+                return Err(invalid(format!(
+                    "the update changes nothing about {}",
+                    current.label
+                )));
+            }
+            let draft = validate::day_plan(draft)?;
+            world.plans.insert(
+                *day_plan_id,
+                DayPlan {
+                    label: draft.label.clone(),
+                    items: draft.items.clone(),
+                    ..current
+                },
+            );
+            (
+                EntityAction::Update,
+                *day_plan_id,
+                EntityDraft::DayPlan(draft),
+                lines,
+            )
+        }
+
+        Operation::AdjustProductAmount { .. }
+        | Operation::AddItem { .. }
+        | Operation::RemoveItem { .. }
+        | Operation::SwapMeal { .. }
+        | Operation::AssignPlan { .. }
+        | Operation::ClearPlan { .. } => {
+            return Err(Error::Internal {
+                reason: format!("{} is not an entity edit", operation.kind().name()),
+            });
+        }
+    };
+
+    Ok(EntityChange {
+        action,
+        id,
+        draft,
+        changes,
+    })
+}
+
+/// Sets one figure of a product and says so, when the update gives a different one.
+fn set_figure(
+    figure: &mut f64,
+    wanted: Option<f64>,
+    name: &str,
+    unit: &str,
+    per: &str,
+    lines: &mut Vec<String>,
+) {
+    if let Some(wanted) = wanted.filter(|wanted| wanted != figure) {
+        lines.push(format!("{name} {per} {figure} {unit} → {wanted} {unit}"));
+        *figure = wanted;
+    }
+}
+
+/// Puts a meal into the data, with its totals derived as a stored one's would be.
+fn put_meal(world: &mut World, id: Uuid, draft: &MealDraft, current: Option<&Meal>) {
+    let meal = Meal {
+        id,
+        label: draft.label.clone(),
+        category_id: draft.category_id,
+        servings: draft.servings.clone(),
+        created_at: current.map_or(OffsetDateTime::UNIX_EPOCH, |meal| meal.created_at),
+        updated_at: current.map_or(OffsetDateTime::UNIX_EPOCH, |meal| meal.updated_at),
+    };
+    let derived = derive::derive_meal(meal, &world.products);
+    world.meals.insert(id, derived);
+}
+
+/// Reserves the id a create names, which must not belong to anything already there.
+fn claim_new_id(world: &World, created: &mut HashSet<Uuid>, id: Uuid) -> Result<()> {
+    let taken = world.products.contains_key(&id)
+        || world.meals.contains_key(&id)
+        || world.plans.contains_key(&id)
+        || !created.insert(id);
+    if taken {
+        return Err(invalid(format!(
+            "the new id {id} is already in use; each new item needs an id of its own"
+        )));
+    }
+    Ok(())
+}
+
+/// An update names something already there; what this proposal creates is set in full by
+/// its create, so updating it as well would only split one edit in two.
+fn refuse_created(created: &HashSet<Uuid>, id: Uuid, what: &str) -> Result<()> {
+    if created.contains(&id) {
+        return Err(invalid(format!(
+            "the new {what} {id} is set in full where it is created, not updated after"
+        )));
+    }
+    Ok(())
+}
+
+fn remap(id: Uuid, ids: &HashMap<Uuid, Uuid>) -> Uuid {
+    ids.get(&id).copied().unwrap_or(id)
+}
+
+fn remap_items(items: &[DayPlanItem], ids: &HashMap<Uuid, Uuid>) -> Vec<DayPlanItem> {
+    items
+        .iter()
+        .map(|item| match item {
+            DayPlanItem::Meal { meal_id } => DayPlanItem::Meal {
+                meal_id: remap(*meal_id, ids),
+            },
+            DayPlanItem::Product { product_id, amount } => DayPlanItem::Product {
+                product_id: remap(*product_id, ids),
+                amount: *amount,
+            },
+        })
+        .collect()
+}
+
+/// The day change with every provisional id replaced by the one the store assigned.
+fn remap_day(change: &DayChange, ids: &HashMap<Uuid, Uuid>) -> DayChange {
+    let mut change = change.clone();
+    if let Some(plan) = change.plan.as_mut() {
+        plan.current_plan_id = remap(plan.current_plan_id, ids);
+        plan.source_plan_id = remap(plan.source_plan_id, ids);
+        plan.items = remap_items(&plan.items, ids);
+    }
+    change
 }
 
 /// The dates an operation may act on, or why it may not act on them.
@@ -529,7 +1155,10 @@ fn resolve(world: &World, request: &str, operations: &[Operation]) -> Result<Vec
 /// forwards and stay short, it has to lie inside the window the assistant can see, and a
 /// date before today needs the request to have asked for it in so many words.
 fn checked_dates(world: &World, operation: &Operation, past_allowed: bool) -> Result<Vec<Date>> {
-    let range = operation.dates();
+    // An entity edit names no date; it was resolved before the days.
+    let Some(range) = operation.dates() else {
+        return Ok(Vec::new());
+    };
     let dates: Vec<Date> = range.dates().collect();
     let kind = operation.kind().name();
 
@@ -718,6 +1347,17 @@ fn edit(world: &World, operation: &Operation, change: &mut DayChange) -> Result<
             plan.edited = true;
             format!("{to} in place of {from}")
         }
+
+        Operation::CreateProduct { .. }
+        | Operation::UpdateProduct { .. }
+        | Operation::CreateMeal { .. }
+        | Operation::UpdateMeal { .. }
+        | Operation::CreateDayPlan { .. }
+        | Operation::UpdateDayPlan { .. } => {
+            return Err(Error::Internal {
+                reason: format!("{} names no date", operation.kind().name()),
+            });
+        }
     };
 
     change.changes.push(line);
@@ -765,10 +1405,36 @@ fn names(item: &DayPlanItem, wanted: &ItemRef) -> bool {
     }
 }
 
-/// What the user reads before confirming: the dates that change, what changes on each,
-/// and where that leaves the day against the targets.
-fn preview(world: &World, proposal: Proposal, changes: &[DayChange]) -> Preview {
-    let days = changes
+/// What the user reads before confirming: the things created or changed, the dates that
+/// change and what changes on each, and where that leaves the day against the targets.
+fn preview(world: &World, proposal: Proposal, resolved: &Resolved) -> Preview {
+    let after_world = &resolved.after;
+    let entities = resolved
+        .entities
+        .iter()
+        .map(|change| {
+            let kind = change.draft.kind();
+            let macros = match &change.draft {
+                EntityDraft::Product(draft) => draft.macros,
+                EntityDraft::Meal(_) => after_world
+                    .meals
+                    .get(&change.id)
+                    .map_or(Macros::ZERO, |meal| meal.macros),
+                EntityDraft::DayPlan(draft) => after_world.macros_of(&draft.items),
+            };
+            PreviewEntity {
+                kind,
+                action: change.action,
+                label: change.draft.label().to_owned(),
+                changes: change.changes.clone(),
+                macros,
+                dates_using: world.dates_using(kind, change.id),
+            }
+        })
+        .collect();
+
+    let days = resolved
+        .days
         .iter()
         .map(|change| {
             let before = world
@@ -777,7 +1443,7 @@ fn preview(world: &World, proposal: Proposal, changes: &[DayChange]) -> Preview 
             let after = change
                 .plan
                 .as_ref()
-                .map_or(Macros::ZERO, |plan| world.macros_of(&plan.items));
+                .map_or(Macros::ZERO, |plan| after_world.macros_of(&plan.items));
             PreviewDay {
                 date: change.date,
                 label: change.plan.as_ref().map(|plan| plan.label.clone()),
@@ -794,6 +1460,7 @@ fn preview(world: &World, proposal: Proposal, changes: &[DayChange]) -> Preview 
 
     Preview {
         proposal,
+        entities,
         days,
         targets: world.targets,
     }
@@ -811,7 +1478,7 @@ mod tests {
     use time::macros::date;
 
     use super::*;
-    use crate::domain::{DateRange, Meal, Nutrients, Unit};
+    use crate::domain::{DateRange, DayPlanPatch, MealPatch, Nutrients, ProductPatch, Unit};
 
     const TODAY: Date = date!(2026 - 10 - 20);
 
@@ -919,28 +1586,9 @@ mod tests {
                 carbohydrates_g: 220.0,
             }),
             calendar,
-            assignable: [&training, &rest]
-                .into_iter()
-                .map(|plan| ContextPlan {
-                    id: plan.id,
-                    label: plan.label.clone(),
-                })
-                .collect(),
-            meal_list: [&porridge, &omelette]
-                .into_iter()
-                .map(|meal| ContextMeal {
-                    id: meal.id,
-                    label: meal.label.clone(),
-                })
-                .collect(),
-            product_list: [&whey, &banana]
-                .into_iter()
-                .map(|product| ContextProduct {
-                    id: product.id,
-                    name: product.name.clone(),
-                    unit: product.unit,
-                })
-                .collect(),
+            assignable: vec![training.id, rest.id],
+            meal_order: vec![porridge.id, omelette.id],
+            product_order: vec![whey.id, banana.id],
             plans: [training.clone(), rest.clone()]
                 .into_iter()
                 .map(|plan| (plan.id, plan))
@@ -960,6 +1608,14 @@ mod tests {
         }
     }
 
+    fn resolve_days(
+        world: &World,
+        request: &str,
+        operations: &[Operation],
+    ) -> Result<Vec<DayChange>> {
+        resolve(world, request, operations).map(|resolved| resolved.days)
+    }
+
     fn next_days(days: i64) -> DateRange {
         DateRange {
             from: TODAY,
@@ -976,7 +1632,8 @@ mod tests {
             delta_amount: -40.0,
         }];
 
-        let changes = resolve(&f.world, "next 4 days I have 40 g less whey", &operations).unwrap();
+        let changes =
+            resolve_days(&f.world, "next 4 days I have 40 g less whey", &operations).unwrap();
         assert_eq!(changes.len(), 4);
         for change in &changes {
             assert!(change.date >= TODAY, "{} is in the past", change.date);
@@ -1021,7 +1678,7 @@ mod tests {
             product_id: f.whey,
             delta_amount: -40.0,
         }];
-        let changes = resolve(&f.world, "today 40 g less whey", &operations).unwrap();
+        let changes = resolve_days(&f.world, "today 40 g less whey", &operations).unwrap();
 
         let plan = changes[0].plan.as_ref().unwrap();
         assert_eq!(plan.current_plan_id, copy_id);
@@ -1040,14 +1697,16 @@ mod tests {
             delta_amount: -40.0,
         }];
 
-        let Err(Error::Invalid { reason, .. }) = resolve(&f.world, "40 g less whey", &operations)
+        let Err(Error::Invalid { reason, .. }) =
+            resolve_days(&f.world, "40 g less whey", &operations)
         else {
             panic!("a past date should be refused");
         };
         assert!(reason.contains("has passed"), "{reason}");
 
         // The same operation, from a request that says so, goes through.
-        let changes = resolve(&f.world, "yesterday I had 40 g less whey", &operations).unwrap();
+        let changes =
+            resolve_days(&f.world, "yesterday I had 40 g less whey", &operations).unwrap();
         assert_eq!(changes.len(), 1);
     }
 
@@ -1064,7 +1723,7 @@ mod tests {
             let operations = [Operation::ClearPlan { dates }];
             assert!(
                 matches!(
-                    resolve(&f.world, "clear those days", &operations),
+                    resolve_days(&f.world, "clear those days", &operations),
                     Err(Error::Invalid { .. })
                 ),
                 "{dates:?} should be refused"
@@ -1082,7 +1741,7 @@ mod tests {
             delta_amount: -10.0,
         }];
         assert!(matches!(
-            resolve(&f.world, "less of that", &unknown),
+            resolve_days(&f.world, "less of that", &unknown),
             Err(Error::Invalid { .. })
         ));
 
@@ -1092,7 +1751,8 @@ mod tests {
             product_id: f.whey,
             delta_amount: -60.0,
         }];
-        let Err(Error::Invalid { reason, .. }) = resolve(&f.world, "no whey today", &impossible)
+        let Err(Error::Invalid { reason, .. }) =
+            resolve_days(&f.world, "no whey today", &impossible)
         else {
             panic!("an amount of zero should be refused");
         };
@@ -1104,7 +1764,8 @@ mod tests {
             product_id: f.banana,
             delta_amount: -20.0,
         }];
-        let Err(Error::Invalid { reason, .. }) = resolve(&f.world, "less banana", &nested) else {
+        let Err(Error::Invalid { reason, .. }) = resolve_days(&f.world, "less banana", &nested)
+        else {
             panic!("a product inside a meal should be refused");
         };
         assert!(reason.contains("inside a meal"), "{reason}");
@@ -1139,7 +1800,7 @@ mod tests {
 
         for operation in ambiguous {
             let Err(Error::Invalid { reason, .. }) =
-                resolve(&f.world, "40 g less whey", &[operation])
+                resolve_days(&f.world, "40 g less whey", &[operation])
             else {
                 panic!("an item the day holds twice should be refused");
             };
@@ -1162,7 +1823,7 @@ mod tests {
             },
         ];
 
-        let changes = resolve(
+        let changes = resolve_days(
             &f.world,
             "omelette instead of porridge, no whey",
             &operations,
@@ -1195,7 +1856,8 @@ mod tests {
             },
         ];
 
-        let changes = resolve(&f.world, "rest day tomorrow with a shake", &operations).unwrap();
+        let changes =
+            resolve_days(&f.world, "rest day tomorrow with a shake", &operations).unwrap();
         let plan = changes[0].plan.as_ref().unwrap();
         assert_eq!(plan.source_plan_id, f.rest);
         assert!(plan.edited && !plan.is_copy);
@@ -1209,7 +1871,7 @@ mod tests {
         let operations = [Operation::ClearPlan {
             dates: DateRange::just(TODAY),
         }];
-        let changes = resolve(&f.world, "nothing planned today", &operations).unwrap();
+        let changes = resolve_days(&f.world, "nothing planned today", &operations).unwrap();
 
         assert!(changes[0].plan.is_none());
         assert!(!changes[0].detaches());
@@ -1221,7 +1883,7 @@ mod tests {
             dates: DateRange::just(TODAY + Duration::days(30)),
         }];
         assert!(matches!(
-            resolve(&f.world, "nothing planned then", &empty),
+            resolve_days(&f.world, "nothing planned then", &empty),
             Err(Error::Invalid { .. })
         ));
     }
@@ -1234,14 +1896,15 @@ mod tests {
             product_id: f.whey,
             delta_amount: -40.0,
         }];
-        let changes = resolve(&f.world, "40 g less whey today", &operations).unwrap();
+        let resolved = resolve(&f.world, "40 g less whey today", &operations).unwrap();
         let proposal = Proposal {
             request: "40 g less whey today".to_owned(),
             rationale: "Dropped the shake".to_owned(),
             operations: operations.to_vec(),
         };
 
-        let preview = preview(&f.world, proposal, &changes);
+        let preview = preview(&f.world, proposal, &resolved);
+        assert!(preview.entities.is_empty());
         assert_eq!(preview.days.len(), 1);
         let day = &preview.days[0];
 
@@ -1296,6 +1959,286 @@ mod tests {
         // A day with nothing on it is still in the context, so a plan can be put on it.
         let far = context.days.last().unwrap();
         assert!(far.label.is_none() && far.items.is_empty());
+    }
+
+    fn draft_product(name: &str) -> ProductDraft {
+        ProductDraft {
+            name: name.to_owned(),
+            unit: Unit::Gram,
+            macros: Macros {
+                energy_kcal: 370.0,
+                fat_g: 7.0,
+                protein_g: 13.0,
+                carbohydrates_g: 60.0,
+            },
+            nutrients: Nutrients::new(),
+            cost: None,
+            brand: None,
+        }
+    }
+
+    #[test]
+    fn creates_a_product_a_meal_and_a_plan_that_name_each_other_and_puts_it_on_a_date() {
+        let f = fixture();
+        let oats = Uuid::new_v4();
+        let bowl = Uuid::new_v4();
+        let plan = Uuid::new_v4();
+        // Proposed out of order: the plan first, then the meal, then the product it needs.
+        let operations = [
+            Operation::AssignPlan {
+                dates: DateRange::just(TODAY),
+                day_plan_id: plan,
+            },
+            Operation::CreateDayPlan {
+                new_id: plan,
+                day_plan: DayPlanDraft {
+                    label: "Oat day".to_owned(),
+                    category_id: None,
+                    items: vec![DayPlanItem::Meal { meal_id: bowl }],
+                },
+            },
+            Operation::CreateMeal {
+                new_id: bowl,
+                meal: MealDraft {
+                    label: "Oat bowl".to_owned(),
+                    category_id: None,
+                    servings: vec![
+                        Serving {
+                            product_id: oats,
+                            amount: 80.0,
+                        },
+                        Serving {
+                            product_id: f.whey,
+                            amount: 30.0,
+                        },
+                    ],
+                },
+            },
+            Operation::CreateProduct {
+                new_id: oats,
+                product: draft_product("Oats"),
+            },
+        ];
+
+        let resolved = resolve(&f.world, "an oat day today", &operations).unwrap();
+        let kinds: Vec<_> = resolved
+            .entities
+            .iter()
+            .map(|change| (change.draft.kind(), change.action))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (EntityKind::Product, EntityAction::Create),
+                (EntityKind::Meal, EntityAction::Create),
+                (EntityKind::DayPlan, EntityAction::Create),
+            ]
+        );
+        assert_eq!(
+            resolved.entities[1].changes,
+            vec!["Made of 80 g Oats, 30 g Whey"]
+        );
+
+        assert_eq!(resolved.days.len(), 1);
+        let day = resolved.days[0].plan.as_ref().unwrap();
+        assert_eq!(day.current_plan_id, plan);
+        assert_eq!(day.label, "Oat day");
+
+        // The new things are counted as they would be once written.
+        let preview = preview(
+            &f.world,
+            Proposal {
+                request: "an oat day today".to_owned(),
+                rationale: String::new(),
+                operations: operations.to_vec(),
+            },
+            &resolved,
+        );
+        let expected = 0.8 * 370.0 + 0.3 * 380.0;
+        assert!((preview.entities[1].macros.energy_kcal - expected).abs() < 1e-9);
+        assert!((preview.days[0].after.energy_kcal - expected).abs() < 1e-9);
+
+        // Once applied, every provisional id is the one the store gave it.
+        let ids: HashMap<Uuid, Uuid> = [
+            (oats, Uuid::new_v4()),
+            (bowl, Uuid::new_v4()),
+            (plan, Uuid::new_v4()),
+        ]
+        .into_iter()
+        .collect();
+        let written = remap_day(&resolved.days[0], &ids);
+        assert_eq!(written.plan.unwrap().current_plan_id, ids[&plan]);
+    }
+
+    #[test]
+    fn updating_a_product_says_what_changed_and_carries_into_the_days_that_hold_it() {
+        let f = fixture();
+        let operations = [
+            Operation::UpdateProduct {
+                product_id: f.whey,
+                changes: ProductPatch {
+                    energy_kcal: Some(400.0),
+                    cost: Some(2.5),
+                    ..ProductPatch::default()
+                },
+            },
+            Operation::AdjustProductAmount {
+                dates: DateRange::just(TODAY),
+                product_id: f.whey,
+                delta_amount: -10.0,
+            },
+        ];
+
+        let resolved = resolve(
+            &f.world,
+            "whey is 400 kcal now, and 10 g less today",
+            &operations,
+        )
+        .unwrap();
+        let change = &resolved.entities[0];
+        assert_eq!(
+            change.changes,
+            vec![
+                "Energy per 100 g 380 kcal → 400 kcal".to_owned(),
+                "Cost per 100 g 1 → 2.5".to_owned(),
+            ]
+        );
+        let EntityDraft::Product(draft) = &change.draft else {
+            panic!("a product update writes a product");
+        };
+        // What the patch left out is kept, not cleared.
+        assert_eq!(draft.name, "Whey");
+        assert!((draft.macros.protein_g - 20.0).abs() < 1e-9);
+
+        let preview = preview(
+            &f.world,
+            Proposal {
+                request: String::new(),
+                rationale: String::new(),
+                operations: operations.to_vec(),
+            },
+            &resolved,
+        );
+        // Every date in the fixture holds whey loose on the training plan.
+        assert_eq!(preview.entities[0].dates_using, 8);
+        let day = &preview.days[0];
+        assert!((day.after.energy_kcal - (89.0 + 0.5 * 400.0)).abs() < 1e-9);
+        assert!((day.before.energy_kcal - (89.0 + 0.6 * 380.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn updating_a_plan_or_meal_reaches_every_date_on_it() {
+        let f = fixture();
+        let operations = [
+            Operation::UpdateMeal {
+                meal_id: f.porridge,
+                changes: MealPatch {
+                    label: Some("Banana porridge".to_owned()),
+                    ..MealPatch::default()
+                },
+            },
+            Operation::UpdateDayPlan {
+                day_plan_id: f.training,
+                changes: DayPlanPatch {
+                    items: Some(vec![DayPlanItem::Meal {
+                        meal_id: f.omelette,
+                    }]),
+                    ..DayPlanPatch::default()
+                },
+            },
+        ];
+        let resolved = resolve(&f.world, "omelette on training days", &operations).unwrap();
+        assert!(resolved.days.is_empty(), "no single date was edited");
+        assert_eq!(
+            resolved.entities[0].changes,
+            vec!["Renamed from Porridge to Banana porridge"]
+        );
+        assert_eq!(
+            resolved.entities[1].changes,
+            vec!["Now Omelette, instead of Banana porridge, 60 g Whey"]
+        );
+        assert_eq!(f.world.dates_using(EntityKind::DayPlan, f.training), 8);
+        assert_eq!(f.world.dates_using(EntityKind::Meal, f.porridge), 8);
+        assert_eq!(f.world.dates_using(EntityKind::Product, f.banana), 8);
+        assert_eq!(f.world.dates_using(EntityKind::Meal, f.omelette), 0);
+    }
+
+    #[test]
+    fn refuses_entity_edits_that_do_not_fit_the_data() {
+        let f = fixture();
+        let refused = |operations: &[Operation], needle: &str| {
+            let Err(Error::Invalid { reason, .. }) = resolve(&f.world, "edit", operations) else {
+                panic!("{operations:?} should be refused");
+            };
+            assert!(
+                reason.contains(needle),
+                "{reason:?} should mention {needle:?}"
+            );
+        };
+
+        // A new id that is already somebody's.
+        refused(
+            &[Operation::CreateProduct {
+                new_id: f.whey,
+                product: draft_product("Oats"),
+            }],
+            "already in use",
+        );
+        // A meal made of a product that does not exist.
+        refused(
+            &[Operation::CreateMeal {
+                new_id: Uuid::new_v4(),
+                meal: MealDraft {
+                    label: "Mystery".to_owned(),
+                    category_id: None,
+                    servings: vec![Serving {
+                        product_id: Uuid::new_v4(),
+                        amount: 50.0,
+                    }],
+                },
+            }],
+            "does not exist",
+        );
+        // An update that changes nothing.
+        refused(
+            &[Operation::UpdateProduct {
+                product_id: f.whey,
+                changes: ProductPatch {
+                    name: Some("Whey".to_owned()),
+                    ..ProductPatch::default()
+                },
+            }],
+            "changes nothing",
+        );
+        // A date's own copy is not a plan the user keeps.
+        let mut world = f.world.clone();
+        let copy = day_plan("Training day", Vec::new(), Some(f.training));
+        world.plans.insert(copy.id, copy.clone());
+        let Err(Error::Invalid { reason, .. }) = resolve(
+            &world,
+            "edit",
+            &[Operation::UpdateDayPlan {
+                day_plan_id: copy.id,
+                changes: DayPlanPatch {
+                    label: Some("Other".to_owned()),
+                    ..DayPlanPatch::default()
+                },
+            }],
+        ) else {
+            panic!("a copy cannot be updated");
+        };
+        assert!(reason.contains("own copy"));
+        // A figure the product rules refuse, through the update as through the form.
+        refused(
+            &[Operation::UpdateProduct {
+                product_id: f.whey,
+                changes: ProductPatch {
+                    protein_g: Some(-5.0),
+                    ..ProductPatch::default()
+                },
+            }],
+            "",
+        );
     }
 
     #[test]

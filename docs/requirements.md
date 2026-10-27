@@ -138,7 +138,7 @@ Nutrients are shown as the four macros, with the full nutrient set behind an exp
 | Calendar | `/calendar` | `CL-1`–`CL-5`, `TG-2`, `TG-3` |
 | Targets | `/targets` | `TG-1`, `WT-6`, `DT-1`–`DT-4` — the macro targets, the weight trend beside them, and exporting or importing the data |
 | Weight | `/weight` | `WT-1`–`WT-7` — quick log, the graph, and the weigh-in history |
-| Assistant | `/assistant` | `AS-1`–`AS-10` — the request, the preview with Apply or Discard, the API key, and what has been applied |
+| Assistant | `/assistant` | `AS-1`–`AS-13` — the request, the preview with Apply or Discard, the API key, and what has been applied |
 
 Creating and editing are screens rather than dialogs, because every write replaces the whole
 entity and so has to start from a fresh read. Dialogs carry what is genuinely one decision:
@@ -332,22 +332,24 @@ what would change on each date. The user applies it, or discards it.
 - `AS-8` The system shall record every applied request — what was asked, what the assistant said, the operations, what each date pointed at before, and when — and shall show it. The record shall be enough to reverse the change by hand.
 - `AS-9` The system shall require the user's own API key for the assistant, shall keep it on the device, shall never return it in full, and shall send nothing to the assistant while there is none.
 - `AS-10` Adding a kind of operation shall not change how a proposal is previewed, confirmed or applied.
+- `AS-11` The system shall let the assistant propose creating a product, meal or day plan, and changing the fields of an existing one, each checked by the same rules the screens' own forms apply. A change to an existing one shall touch only the fields it names.
+- `AS-12` The preview shall name each product, meal or day plan a proposal creates or changes and say what changes in plain words; for a change it shall say how many dates in view use it, because they all follow. It shall show no identifiers and no operation names.
+- `AS-13` A proposal may use what it creates — a meal made of a new product, a new plan put on a date — and applying it shall write those first and point everything after them at the identifiers the store assigns.
 
 ### 4.13 Data export and import
 **Description and priority.** Moving all of the user's data in and out of the application as
 one file. High: the database is otherwise a private file on the phone, so an uninstall or a
 second install is a loss with no way back. New in this version.
 
-**Stimulus/response.** Export writes a copy of everything to the application's own folder in
-shared storage, which a computer reaches over USB or adb. Import reads one named file from
-that folder, checks it, keeps a copy of what it replaces, swaps it in and closes the
-application.
+**Stimulus/response.** Export asks where to save, through the system's file picker, and
+writes a copy of everything there. Import asks for a file the same way, checks it, keeps a
+copy of what it replaces, swaps it in and closes the application.
 
 **Functional requirements.**
 - `DT-1` The system shall export the whole database as one self-contained file, consistent at the moment it is taken, without closing the application.
 - `DT-2` The system shall check a file before importing it — an intact SQLite file whose applied migrations are all ones this version carries — and shall refuse it, replacing nothing, otherwise. A file from an older version shall be accepted and migrated as an update would be.
-- `DT-3` The system shall export the current data before an import replaces it, and shall ask for confirmation first.
-- `DT-4` The system shall say where the folder is, and that the folder is removed with the application.
+- `DT-3` The system shall keep a copy of the current data before an import replaces it, and shall ask for confirmation first.
+- `DT-4` The system shall save and read the file wherever the user chooses through the platform's file picker, and shall need no storage permission to do it.
 
 ## 5. Other non-functional requirements
 
@@ -363,7 +365,7 @@ and `PL-2`.
 The application has no authentication and no transport security of its own: it listens on no
 port and accepts no connection, so there is nothing to authenticate. Its database is a
 private file in the platform's app data directory, and nothing in the application copies it
-anywhere.
+anywhere but where the user exports it (§4.13).
 
 Two features reach outward, both as HTTPS clients over rustls with webpki roots, and both
 only when the user asks.
@@ -376,7 +378,8 @@ off the device. It is off until the user turns it on by supplying an API key.
 
 - *What is sent, per question asked:* the request the user typed, and a compact view of the
   plan around today — the dates in the assistant's window with the labels and amounts on
-  them, the names and ids of their day plans, meals and products, and their macro targets.
+  them, their day plans with what they hold, their meals with their servings, their products
+  with macros per 100 g or ml, all with their ids, and their macro targets.
 - *What is not sent:* the database, the weigh-ins, the prices, the record of applied
   requests, any identifier of the device or the installation, and anything about dates
   outside that window.

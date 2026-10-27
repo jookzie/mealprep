@@ -1,11 +1,13 @@
 import type {
 	AppliedChange,
+	AppliedEntityChange,
 	AssistantRecord,
 	DateRange,
+	EntityKind,
 	Macros,
-	Operation,
 	Preview,
 	PreviewDay,
+	PreviewEntity,
 } from '../api/types';
 import { deviation } from './macros';
 import { datesInRange, dayMonthLabel, type IsoDate } from './week';
@@ -22,28 +24,28 @@ export function rangeLabel(range: DateRange): string {
 	return `${dayMonthLabel(range.from)} – ${dayMonthLabel(range.to)}`;
 }
 
+const ENTITY_NAMES: Record<EntityKind, string> = {
+	product: 'product',
+	meal: 'meal',
+	'day-plan': 'day plan',
+};
+
+/** "New meal" or "Changed product", the heading of one entity in a preview or the log. */
+export function entityHeading(entity: Pick<PreviewEntity, 'kind' | 'action'>): string {
+	const name = ENTITY_NAMES[entity.kind];
+	return entity.action === 'create' ? `New ${name}` : `Changed ${name}`;
+}
+
 /**
- * What a typed operation is, in the user's words. Shown beside the model's prose so the
- * confirmation is about the edit that will actually run, not about the sentence above it.
+ * The one line that says how far an update reaches, or nothing for a create. An update
+ * to a meal or plan moves every day that uses it, the past included, which is the thing
+ * worth saying before Apply.
  */
-export function operationLabel(operation: Operation): string {
-	const when = rangeLabel(operation.dates);
-	switch (operation.kind) {
-		case 'adjust-product-amount': {
-			const direction = operation.deltaAmount < 0 ? 'Less' : 'More';
-			return `${direction} of one product · ${when}`;
-		}
-		case 'add-item':
-			return `Add ${operation.item.kind === 'meal' ? 'a meal' : 'a product'} · ${when}`;
-		case 'remove-item':
-			return `Remove ${operation.item.kind === 'meal' ? 'a meal' : 'a product'} · ${when}`;
-		case 'swap-meal':
-			return `Swap one meal for another · ${when}`;
-		case 'assign-plan':
-			return `Put a day plan on the day · ${when}`;
-		case 'clear-plan':
-			return `Leave the day unplanned · ${when}`;
-	}
+export function entityReach(entity: PreviewEntity): string | null {
+	if (entity.action === 'create') return null;
+	if (entity.datesUsing === 0) return 'No day in view uses it yet.';
+	const days = entity.datesUsing === 1 ? 'day' : 'days';
+	return `${entity.datesUsing} ${days} in view use it, and all of them follow.`;
 }
 
 /**
@@ -59,34 +61,41 @@ export function isPastDay(day: PreviewDay, today: IsoDate): boolean {
 }
 
 export type PreviewSummary = {
+	/** How many products, meals and day plans it creates or changes. */
+	entityCount: number;
 	dayCount: number;
 	/** How many of those days get their own copy of their plan when this is applied. */
 	detachCount: number;
 	/** How many of those days have already happened. */
 	pastCount: number;
-	/** True when the assistant proposed nothing that would change a day. */
+	/** True when the assistant proposed nothing that would change anything. */
 	isEmpty: boolean;
 	dates: IsoDate[];
 	/** The one line above Apply and Discard. */
 	label: string;
 };
 
+function plural(count: number, one: string, many: string): string {
+	return `${count} ${count === 1 ? one : many}`;
+}
+
 export function summarisePreview(preview: Preview, today: IsoDate): PreviewSummary {
 	const dates = preview.days.map((day) => day.date);
 	const dayCount = dates.length;
+	const entityCount = preview.entities.length;
 	const detachCount = preview.days.filter((day) => day.detaches).length;
 	const pastCount = preview.days.filter((day) => isPastDay(day, today)).length;
-	const days = dayCount === 1 ? 'day' : 'days';
 
 	// A past day is named in the line the user reads before pressing Apply, because it is
 	// the one change the copy-on-write cannot make harmless: history is what moves.
-	const label =
-		dayCount === 0
-			? 'Nothing would change.'
-			: pastCount === 0
-				? `${dayCount} ${days} would change.`
-				: `${dayCount} ${days} would change, ${pastCount} already past.`;
-	return { dayCount, detachCount, pastCount, isEmpty: dayCount === 0, dates, label };
+	const parts = [
+		...(entityCount > 0 ? [plural(entityCount, 'item', 'items')] : []),
+		...(dayCount > 0 ? [plural(dayCount, 'day', 'days')] : []),
+	];
+	const isEmpty = parts.length === 0;
+	const past = pastCount > 0 ? `, ${pastCount} already past` : '';
+	const label = isEmpty ? 'Nothing would change.' : `${parts.join(' and ')} would change${past}.`;
+	return { entityCount, dayCount, detachCount, pastCount, isEmpty, dates, label };
 }
 
 /**
@@ -101,23 +110,34 @@ export function dayDelta(day: PreviewDay): Macros {
  * The one line that says how to put an applied change back by hand.
  *
  * There is no undo command. The log keeps what each date pointed at before, which is all
- * reversing it takes: assign that plan again, or clear the date when it had none.
+ * reversing it takes: put that plan on the day again, or clear it when it had none.
  */
 export function reversalHint(change: AppliedChange): string {
 	if (!change.previousDayPlanId) {
-		return 'Was unplanned — clear the day to put it back.';
+		return 'Was unplanned — clear the day on the calendar to undo.';
 	}
-	const label = change.previousLabel ?? 'a plan that has since been deleted';
-	return `Was ${label} — assign day plan ${change.previousDayPlanId} to that date to put it back.`;
+	if (!change.previousLabel) {
+		return 'Was on a plan that has since been deleted.';
+	}
+	return `Was ${change.previousLabel} — put ${change.previousLabel} back on the day to undo.`;
+}
+
+/** "New meal: Oat bowl", one entity of the log in a line. */
+export function appliedEntityLine(change: AppliedEntityChange): string {
+	return `${entityHeading(change)}: ${change.label}`;
 }
 
 /** What one entry of the log did, in one line. */
 export function recordSummary(record: AssistantRecord): string {
-	const count = record.changes.length;
-	const days = `${count} ${count === 1 ? 'day' : 'days'}`;
-	const detached = record.changes.filter((change) => change.detached).length;
-	if (detached === 0) return `${days} changed`;
-	return `${days} changed · ${detached} given their own copy of the plan`;
+	const entities = record.entityChanges ?? [];
+	const created = entities.filter((change) => change.action === 'create').length;
+	const updated = entities.length - created;
+	const parts = [
+		...(created > 0 ? [`${plural(created, 'item', 'items')} added`] : []),
+		...(updated > 0 ? [`${plural(updated, 'item', 'items')} changed`] : []),
+		...(record.changes.length > 0 ? [`${plural(record.changes.length, 'day', 'days')} changed`] : []),
+	];
+	return parts.length === 0 ? 'Nothing changed' : parts.join(' · ');
 }
 
 /**

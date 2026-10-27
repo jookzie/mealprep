@@ -1,8 +1,12 @@
 name: check
 
+# A branch with a pull request is checked by the pull_request run alone; push runs are for
+# main. Checking every push as well ran the same commit twice, and tags not at all usefully.
 on:
   pull_request:
   push:
+    branches:
+      - main
 
 # A later push to the same ref makes the earlier run's answer worthless.
 concurrency:
@@ -20,7 +24,10 @@ jobs:
       # The workspace includes src-tauri, and Tauri's desktop build links GTK and WebKit
       # through pkg-config, so clippy and cargo test need them present even though nothing
       # here runs a window. The Android release build cross-compiles and needs none of it.
+      # Bounded: a stalled apt mirror once held this step for over ten minutes on a commit
+      # whose twin run passed in under two. A timeout fails it fast enough to just re-run.
       - name: Install the Linux libraries Tauri builds against
+        timeout-minutes: 4
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \

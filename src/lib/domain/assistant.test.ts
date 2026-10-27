@@ -1,17 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import type {
 	AppliedChange,
+	AppliedEntityChange,
 	AssistantRecord,
 	Macros,
-	Operation,
 	Preview,
 	PreviewDay,
+	PreviewEntity,
 } from '../api/types';
 import {
+	appliedEntityLine,
 	dayDelta,
+	entityHeading,
+	entityReach,
 	isPastDay,
 	joinablePlans,
-	operationLabel,
 	rangeDates,
 	rangeLabel,
 	recordSummary,
@@ -35,11 +38,24 @@ function day(date: string, overrides: Partial<PreviewDay> = {}): PreviewDay {
 	};
 }
 
-function preview(days: PreviewDay[]): Preview {
+function preview(days: PreviewDay[], entities: PreviewEntity[] = []): Preview {
 	return {
 		proposal: { request: 'next 4 days I have 40 g less whey', rationale: 'Done.', operations: [] },
+		entities,
 		days,
 		targets: macros(2000, 140),
+	};
+}
+
+function entity(overrides: Partial<PreviewEntity> = {}): PreviewEntity {
+	return {
+		kind: 'meal',
+		action: 'create',
+		label: 'Oat bowl',
+		changes: ['Made of 80 g Oats, 30 g Whey'],
+		macros: macros(410, 35),
+		datesUsing: 0,
+		...overrides,
 	};
 }
 
@@ -76,30 +92,22 @@ describe('rangeDates and rangeLabel', () => {
 	});
 });
 
-describe('operationLabel', () => {
-	const dates = { from: '2026-10-20', to: '2026-10-20' };
+describe('entities', () => {
+	test('a heading says whether the thing is new or changed, in plain words', () => {
+		expect(entityHeading(entity())).toBe('New meal');
+		expect(entityHeading(entity({ kind: 'day-plan', action: 'update' }))).toBe('Changed day plan');
+		expect(entityHeading(entity({ kind: 'product' }))).toBe('New product');
+	});
 
-	test('says what each kind of edit does and when', () => {
-		const operations: Operation[] = [
-			{ kind: 'adjust-product-amount', dates, productId: 'p', deltaAmount: -40 },
-			{ kind: 'adjust-product-amount', dates, productId: 'p', deltaAmount: 40 },
-			{ kind: 'add-item', dates, item: { kind: 'meal', mealId: 'm' } },
-			{ kind: 'remove-item', dates, item: { kind: 'product', productId: 'p' } },
-			{ kind: 'swap-meal', dates, fromMealId: 'a', toMealId: 'b' },
-			{ kind: 'assign-plan', dates, dayPlanId: 'd' },
-			{ kind: 'clear-plan', dates },
-		];
-
-		for (const operation of operations) {
-			const label = operationLabel(operation);
-			expect(label.length).toBeGreaterThan(0);
-			expect(label).toContain(rangeLabel(dates));
-		}
-
-		expect(operationLabel(operations[0])).toStartWith('Less');
-		expect(operationLabel(operations[1])).toStartWith('More');
-		expect(operationLabel(operations[2])).toContain('meal');
-		expect(operationLabel(operations[3])).toContain('product');
+	test('an update says how many days follow it; a create says nothing', () => {
+		expect(entityReach(entity())).toBeNull();
+		expect(entityReach(entity({ action: 'update', datesUsing: 8 }))).toBe(
+			'8 days in view use it, and all of them follow.',
+		);
+		expect(entityReach(entity({ action: 'update', datesUsing: 1 }))).toStartWith('1 day ');
+		expect(entityReach(entity({ action: 'update', datesUsing: 0 }))).toBe(
+			'No day in view uses it yet.',
+		);
 	});
 });
 
@@ -127,6 +135,17 @@ describe('summarisePreview', () => {
 		expect(summary.isEmpty).toBe(true);
 		expect(summary.dayCount).toBe(0);
 		expect(summary.label).toBe('Nothing would change.');
+	});
+
+	test('counts new and changed things alongside the days', () => {
+		const both = summarisePreview(preview([day('2026-10-20')], [entity(), entity()]), '2026-10-20');
+		expect(both.entityCount).toBe(2);
+		expect(both.isEmpty).toBe(false);
+		expect(both.label).toBe('2 items and 1 day would change.');
+
+		const only = summarisePreview(preview([], [entity()]), '2026-10-20');
+		expect(only.isEmpty).toBe(false);
+		expect(only.label).toBe('1 item would change.');
 	});
 });
 
@@ -157,45 +176,66 @@ describe('dayDelta', () => {
 });
 
 describe('reversalHint', () => {
-	test('names the plan to assign again', () => {
+	test('names the plan to put back, by name and never by id', () => {
 		const hint = reversalHint(change());
-		expect(hint).toContain('Training day');
-		expect(hint).toContain('plan-1');
+		expect(hint).toBe('Was Training day — put Training day back on the day to undo.');
+		expect(hint).not.toContain('plan-1');
 	});
 
 	test('says to clear the day when it had nothing', () => {
 		expect(reversalHint(change({ previousDayPlanId: undefined, previousLabel: undefined }))).toBe(
-			'Was unplanned — clear the day to put it back.',
+			'Was unplanned — clear the day on the calendar to undo.',
 		);
 	});
 
-	test('keeps the id when the plan it names has since been deleted', () => {
+	test('says so when the plan it was on has since been deleted', () => {
 		const hint = reversalHint(change({ previousLabel: undefined }));
-		expect(hint).toContain('plan-1');
 		expect(hint).toContain('deleted');
+		expect(hint).not.toContain('plan-1');
 	});
 });
 
 describe('recordSummary', () => {
-	function record(changes: AppliedChange[]): AssistantRecord {
+	function record(
+		changes: AppliedChange[],
+		entityChanges: AppliedEntityChange[] = [],
+	): AssistantRecord {
 		return {
 			id: 'r1',
 			request: 'next 4 days I have 40 g less whey',
 			rationale: 'Done.',
 			operations: [],
 			changes,
+			entityChanges,
 			createdAt: '2026-10-20T08:00:00Z',
 		};
 	}
 
-	test('counts the days and how many were detached', () => {
+	const created: AppliedEntityChange = {
+		kind: 'meal',
+		action: 'create',
+		id: 'm1',
+		label: 'Oat bowl',
+		changes: [],
+	};
+
+	test('counts the days, without how the app stored them', () => {
 		expect(recordSummary(record([change(), change({ date: '2026-10-21' })]))).toBe(
-			'2 days changed · 2 given their own copy of the plan',
+			'2 days changed',
 		);
 	});
 
-	test('leaves the copy clause out when nothing was detached', () => {
-		expect(recordSummary(record([change({ detached: false })]))).toBe('1 day changed');
+	test('counts what was added and changed before the days', () => {
+		expect(
+			recordSummary(record([change()], [created, { ...created, action: 'update', kind: 'product' }])),
+		).toBe('1 item added · 1 item changed · 1 day changed');
+		expect(appliedEntityLine(created)).toBe('New meal: Oat bowl');
+	});
+
+	test('reads a record from before entity edits, which has none', () => {
+		const old = record([change()]);
+		delete (old as Partial<AssistantRecord>).entityChanges;
+		expect(recordSummary(old)).toBe('1 day changed');
 	});
 });
 

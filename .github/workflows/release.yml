@@ -95,6 +95,11 @@ jobs:
         env:
           NDK_VERSION: 30.0.16248370
 
+      # Gradle's distribution, its dependencies and its build cache, kept between runs: on a
+      # cold runner Gradle spent most of the four minutes it took fetching rather than
+      # building. Written from main only, which is where every release starts.
+      - uses: gradle/actions/setup-gradle@v4
+
       - uses: jdx/mise-action@v5
 
       - name: Install the Rust toolchain and the Android target

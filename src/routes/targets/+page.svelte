@@ -13,6 +13,7 @@
 	import { impliedEnergyKcal } from '$lib/domain/macros';
 	import { formatKilograms, formatRate } from '$lib/domain/weight';
 	import { forgetOnSave, keepDraft } from '$lib/memory.svelte';
+	import { toasts } from '$lib/toasts.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -37,7 +38,6 @@
 	let busy = $state(false);
 	let confirmingReset = $state(false);
 	let confirmingImport = $state(false);
-	let exported = $state<string | null>(null);
 
 	// Four independent numbers can quietly disagree; saying so informs and blocks nothing.
 	const implied = $derived.by(() => {
@@ -65,9 +65,9 @@
 
 	async function exportAll() {
 		busy = true;
-		const name = await runMutation(() => exportDatabase(), { invalidate: false });
+		const saved = await runMutation(() => exportDatabase(), { invalidate: false });
 		busy = false;
-		if (name) exported = name;
+		if (saved) toasts.push('success', 'Exported');
 	}
 
 	/*
@@ -144,24 +144,17 @@
 
 <!--
 	The database is a private file on the phone, so this is the only way it leaves or
-	arrives: one file in the app's own folder in shared storage, which a computer reaches
-	over USB or adb. Android deletes that folder with the app, which the text says.
+	arrives: one file, saved or picked through the system's file picker.
 -->
 <section class="card stack" aria-label="Your data">
 	<div>
 		<strong>Your data</strong>
 		<p class="small muted">
-			Export writes a copy of everything to <code class="path">{data.databaseFolder}</code>. Copy
-			it off the phone to keep it: the folder is removed with the app.
-		</p>
-		<p class="small muted">
-			Import replaces everything with <code>mealprep-import.db</code> from that folder. What is
-			here now is exported first, and the app closes; reopen it afterwards.
+			Export saves a copy of everything wherever you choose. Import replaces everything with a
+			copy you pick; what is here now is kept as a backup first, and the app closes — reopen it
+			afterwards.
 		</p>
 	</div>
-	{#if exported}
-		<p class="small" role="status">Exported as <code>{exported}</code>.</p>
-	{/if}
 	<div class="row end">
 		{#if confirmingImport}
 			<button type="button" class="ghost" onclick={() => (confirmingImport = false)}>
@@ -210,10 +203,3 @@
 		</div>
 	</section>
 {/if}
-
-<style>
-	/* A long path has no spaces to wrap at; on a phone it must break rather than widen the page. */
-	.path {
-		overflow-wrap: anywhere;
-	}
-</style>

@@ -13,9 +13,10 @@ mod weight;
 
 pub use self::{
     assistant::{
-        AppliedChange, AssistantContext, AssistantKeyStatus, AssistantRecord, AssistantRecordDraft,
-        ContextDay, ContextItem, ContextMeal, ContextPlan, ContextProduct, DateRange, ItemRef,
-        Operation, OperationKind, Preview, PreviewDay, Proposal,
+        AppliedChange, AppliedEntityChange, AssistantContext, AssistantKeyStatus, AssistantRecord,
+        AssistantRecordDraft, ContextDay, ContextItem, ContextMeal, ContextPlan, ContextProduct,
+        DateRange, DayPlanPatch, EntityAction, EntityKind, ItemRef, MealPatch, Operation,
+        OperationKind, Preview, PreviewDay, PreviewEntity, ProductPatch, Proposal,
     },
     calendar::CalendarDay,
     category::{Category, CategoryDraft, CategoryScope},
