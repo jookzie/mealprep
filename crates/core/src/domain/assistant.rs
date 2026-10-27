@@ -4,11 +4,15 @@
 //! of them against the real data, the user reads a [`Preview`] and confirms, and only then
 //! does anything change.
 //!
+//! Two families of operation. Most are about days — "the next four days", "tomorrow" — and
+//! name the dates they act on. The rest create or change a product, a meal or a day plan
+//! itself, name no date, and reach every date that uses what they change.
+//!
 //! **Adding an operation costs three edits and nothing else:**
 //!
 //! 1. a variant on [`Operation`], and its kind on [`OperationKind`];
 //! 2. an arm in `service::assistant`'s resolver, which both checks the variant and says
-//!    what each date it names ends up holding;
+//!    what each date it names, or each entity it touches, ends up holding;
 //! 3. a tool schema in the adapter that talks to the model — `crates/anthropic`, where the
 //!    schema table is a match on [`OperationKind`], so a new kind stops the workspace
 //!    compiling until it has one.
@@ -22,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
-use super::{DayPlanItem, Macros, Unit};
+use super::{DayPlanDraft, DayPlanItem, Macros, MealDraft, ProductDraft, Serving, Unit};
 
 /// A span of dates an operation acts on, both ends inclusive.
 ///
@@ -67,9 +71,14 @@ impl DateRange {
 
 /// One typed edit the assistant may propose.
 ///
-/// Every variant names the dates it acts on, because a correction is always about days:
-/// "the next four days", "tomorrow", "the rest of the week". Dates are absolute by the
-/// time they get here — resolving "the next four days" against today is the model's job.
+/// A day edit names the dates it acts on: "the next four days", "tomorrow", "the rest of
+/// the week". Dates are absolute by the time they get here — resolving "the next four
+/// days" against today is the model's job. An entity edit names no date: it creates or
+/// changes a product, meal or day plan, and so every date that uses it.
+///
+/// A create carries a `new_id` the model picks, so later operations of the same proposal
+/// can name what it creates. The id is provisional: the store assigns the real one when
+/// the proposal is applied, and the operations after it are pointed at that.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(
     tag = "kind",
@@ -103,6 +112,74 @@ pub enum Operation {
 
     /// Leave those dates unplanned.
     ClearPlan { dates: DateRange },
+
+    /// Add a product to the user's list, figures per 100 g or ml.
+    CreateProduct { new_id: Uuid, product: ProductDraft },
+
+    /// Change some of a product's fields. Every meal and plan that holds it follows.
+    UpdateProduct {
+        product_id: Uuid,
+        changes: ProductPatch,
+    },
+
+    /// Add a meal to the user's list.
+    CreateMeal { new_id: Uuid, meal: MealDraft },
+
+    /// Rename a meal or replace its servings. Every plan that holds it follows.
+    UpdateMeal { meal_id: Uuid, changes: MealPatch },
+
+    /// Add a day plan to the user's list, for assigning to dates.
+    CreateDayPlan {
+        new_id: Uuid,
+        day_plan: DayPlanDraft,
+    },
+
+    /// Rename a day plan or replace its items. Every date on it follows, past ones too.
+    UpdateDayPlan {
+        day_plan_id: Uuid,
+        changes: DayPlanPatch,
+    },
+}
+
+/// The fields of a product an update changes; a field left out keeps its value.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brand: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_kcal: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protein_g: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fat_g: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carbohydrates_g: Option<f64>,
+    /// Per 100 g or ml.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<f64>,
+}
+
+/// The parts of a meal an update changes; the servings, when given, replace them all.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MealPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub servings: Option<Vec<Serving>>,
+}
+
+/// The parts of a day plan an update changes; the items, when given, replace them all.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayPlanPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<DayPlanItem>>,
 }
 
 impl Operation {
@@ -114,20 +191,65 @@ impl Operation {
             Self::SwapMeal { .. } => OperationKind::SwapMeal,
             Self::AssignPlan { .. } => OperationKind::AssignPlan,
             Self::ClearPlan { .. } => OperationKind::ClearPlan,
+            Self::CreateProduct { .. } => OperationKind::CreateProduct,
+            Self::UpdateProduct { .. } => OperationKind::UpdateProduct,
+            Self::CreateMeal { .. } => OperationKind::CreateMeal,
+            Self::UpdateMeal { .. } => OperationKind::UpdateMeal,
+            Self::CreateDayPlan { .. } => OperationKind::CreateDayPlan,
+            Self::UpdateDayPlan { .. } => OperationKind::UpdateDayPlan,
         }
     }
 
-    /// The dates this operation acts on.
-    pub fn dates(&self) -> DateRange {
+    /// The dates this operation acts on, or `None` for an entity edit, which names none.
+    pub fn dates(&self) -> Option<DateRange> {
         match self {
             Self::AdjustProductAmount { dates, .. }
             | Self::AddItem { dates, .. }
             | Self::RemoveItem { dates, .. }
             | Self::SwapMeal { dates, .. }
             | Self::AssignPlan { dates, .. }
-            | Self::ClearPlan { dates } => *dates,
+            | Self::ClearPlan { dates } => Some(*dates),
+            Self::CreateProduct { .. }
+            | Self::UpdateProduct { .. }
+            | Self::CreateMeal { .. }
+            | Self::UpdateMeal { .. }
+            | Self::CreateDayPlan { .. }
+            | Self::UpdateDayPlan { .. } => None,
         }
     }
+
+    /// The kind of entity an entity edit is about, or `None` for a day edit.
+    pub fn entity(&self) -> Option<EntityKind> {
+        match self {
+            Self::CreateProduct { .. } | Self::UpdateProduct { .. } => Some(EntityKind::Product),
+            Self::CreateMeal { .. } | Self::UpdateMeal { .. } => Some(EntityKind::Meal),
+            Self::CreateDayPlan { .. } | Self::UpdateDayPlan { .. } => Some(EntityKind::DayPlan),
+            Self::AdjustProductAmount { .. }
+            | Self::AddItem { .. }
+            | Self::RemoveItem { .. }
+            | Self::SwapMeal { .. }
+            | Self::AssignPlan { .. }
+            | Self::ClearPlan { .. } => None,
+        }
+    }
+}
+
+/// What an entity edit is about, in the order entity edits are applied: a meal can name a
+/// product the same proposal creates, and a day plan a meal.
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EntityKind {
+    Product,
+    Meal,
+    DayPlan,
+}
+
+/// Whether an entity edit makes something new or changes what is there.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EntityAction {
+    Create,
+    Update,
 }
 
 /// Which kind of edit an [`Operation`] is, without its arguments.
@@ -145,17 +267,29 @@ pub enum OperationKind {
     SwapMeal,
     AssignPlan,
     ClearPlan,
+    CreateProduct,
+    UpdateProduct,
+    CreateMeal,
+    UpdateMeal,
+    CreateDayPlan,
+    UpdateDayPlan,
 }
 
 impl OperationKind {
     /// Every kind of operation there is.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 12] = [
         Self::AdjustProductAmount,
         Self::AddItem,
         Self::RemoveItem,
         Self::SwapMeal,
         Self::AssignPlan,
         Self::ClearPlan,
+        Self::CreateProduct,
+        Self::UpdateProduct,
+        Self::CreateMeal,
+        Self::UpdateMeal,
+        Self::CreateDayPlan,
+        Self::UpdateDayPlan,
     ];
 
     /// The name the kind travels under: the `kind` tag of [`Operation`] on the wire, and
@@ -169,6 +303,12 @@ impl OperationKind {
             Self::SwapMeal => "swap-meal",
             Self::AssignPlan => "assign-plan",
             Self::ClearPlan => "clear-plan",
+            Self::CreateProduct => "create-product",
+            Self::UpdateProduct => "update-product",
+            Self::CreateMeal => "create-meal",
+            Self::UpdateMeal => "update-meal",
+            Self::CreateDayPlan => "create-day-plan",
+            Self::UpdateDayPlan => "update-day-plan",
         }
     }
 
@@ -245,29 +385,35 @@ pub enum ContextItem {
     },
 }
 
-/// A day plan the assistant may put on a date.
+/// A day plan the assistant may put on a date, or change.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextPlan {
     pub id: Uuid,
     pub label: String,
+    /// What the plan holds, so an update can say what it becomes.
+    pub items: Vec<DayPlanItem>,
 }
 
-/// A meal the assistant may add to a day or swap in.
+/// A meal the assistant may add to a day, swap in, or change.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextMeal {
     pub id: Uuid,
     pub label: String,
+    /// What the meal is made of, so an update can say what it becomes.
+    pub servings: Vec<Serving>,
 }
 
-/// A product the assistant may add to a day or adjust.
+/// A product the assistant may add to a day, adjust, or change.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextProduct {
     pub id: Uuid,
     pub name: String,
     pub unit: Unit,
+    /// Per 100 g or ml, so a new meal can be sized against the targets.
+    pub macros: Macros,
 }
 
 /// What the assistant answered: the operations it proposes, and why.
@@ -289,6 +435,10 @@ pub struct Proposal {
 #[serde(rename_all = "camelCase")]
 pub struct Preview {
     pub proposal: Proposal,
+    /// One entry per product, meal or day plan the proposal creates or changes, in the
+    /// order they would be written.
+    #[serde(default)]
+    pub entities: Vec<PreviewEntity>,
     /// One entry per date the proposal would change, in date order.
     pub days: Vec<PreviewDay>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -316,6 +466,34 @@ pub struct PreviewDay {
     pub detaches: bool,
 }
 
+/// What one product, meal or day plan would become.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewEntity {
+    pub kind: EntityKind,
+    pub action: EntityAction,
+    /// Its name or label as it would end up.
+    pub label: String,
+    /// What changes, in plain words, one line per change.
+    pub changes: Vec<String>,
+    /// Per 100 g or ml for a product; the whole meal or day for the others.
+    pub macros: Macros,
+    /// How many dates the assistant can see already use it, and so follow an update.
+    pub dates_using: usize,
+}
+
+/// What an applied request did to one product, meal or day plan.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedEntityChange {
+    pub kind: EntityKind,
+    pub action: EntityAction,
+    /// The real id, as the store assigned it for a create.
+    pub id: Uuid,
+    pub label: String,
+    pub changes: Vec<String>,
+}
+
 /// One applied request, kept so the user can see what the assistant did and reverse it.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -327,6 +505,10 @@ pub struct AssistantRecord {
     /// One entry per date that changed, carrying what the date pointed at before, which
     /// is all it takes to put it back by hand.
     pub changes: Vec<AppliedChange>,
+    /// The products, meals and day plans it created or changed. Empty in records from
+    /// before the assistant could.
+    #[serde(default)]
+    pub entity_changes: Vec<AppliedEntityChange>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
@@ -360,6 +542,7 @@ pub struct AssistantRecordDraft {
     pub rationale: String,
     pub operations: Vec<Operation>,
     pub changes: Vec<AppliedChange>,
+    pub entity_changes: Vec<AppliedEntityChange>,
 }
 
 /// Whether the assistant has the credential it needs, without handing it back.

@@ -106,6 +106,94 @@ fn schema(kind: OperationKind) -> Value {
              being planned; a day that changes still has a plan.",
             json!({ "dates": dates() }),
         ),
+
+        OperationKind::CreateProduct => (
+            "Add a product to the user's list, with its figures per 100 g or ml. Only when \
+             no product in the context is the one meant; reuse an existing one otherwise.",
+            json!({ "newId": new_id("product"), "product": product() }),
+        ),
+
+        OperationKind::UpdateProduct => (
+            "Change some of a product's fields; leave out what stays. Every meal and day \
+             plan that holds the product follows, on every date.",
+            json!({
+                "productId": {
+                    "type": "string",
+                    "description": "The id of the product, from the context's products.",
+                },
+                "changes": product_patch(),
+            }),
+        ),
+
+        OperationKind::CreateMeal => (
+            "Add a meal to the user's list: a named set of products with amounts. A meal \
+             is shared by every day plan that holds it.",
+            json!({
+                "newId": new_id("meal"),
+                "meal": {
+                    "type": "object",
+                    "properties": {
+                        "label": { "type": "string", "description": "What the meal is called." },
+                        "servings": servings(),
+                    },
+                    "required": ["label", "servings"],
+                },
+            }),
+        ),
+
+        OperationKind::UpdateMeal => (
+            "Rename a meal or replace what it is made of; leave out what stays. Every day \
+             plan that holds the meal follows, on every date, past ones included. When the \
+             request is about some dates only, edit those dates instead.",
+            json!({
+                "mealId": {
+                    "type": "string",
+                    "description": "The id of the meal, from the context's meals.",
+                },
+                "changes": {
+                    "type": "object",
+                    "properties": {
+                        "label": { "type": "string", "description": "The new name." },
+                        "servings": servings(),
+                    },
+                },
+            }),
+        ),
+
+        OperationKind::CreateDayPlan => (
+            "Add a day plan to the user's list: a named day of meals and products, in \
+             order, that dates can then be put on.",
+            json!({
+                "newId": new_id("day plan"),
+                "dayPlan": {
+                    "type": "object",
+                    "properties": {
+                        "label": { "type": "string", "description": "What the plan is called." },
+                        "items": items(),
+                    },
+                    "required": ["label", "items"],
+                },
+            }),
+        ),
+
+        OperationKind::UpdateDayPlan => (
+            "Rename a day plan or replace its items; leave out what stays. Every date on \
+             the plan follows, past ones included. When the request is about some dates \
+             only, edit those dates instead.",
+            json!({
+                "dayPlanId": {
+                    "type": "string",
+                    "description": "The id of the plan, from the context's plans.",
+                },
+                "changes": {
+                    "type": "object",
+                    "properties": {
+                        "label": { "type": "string", "description": "The new name." },
+                        "items": items(),
+                    },
+                },
+            }),
+        ),
     };
 
     let required: Vec<&str> = properties
@@ -135,6 +223,88 @@ fn dates() -> Value {
             "to": { "type": "string", "description": "The last date, as YYYY-MM-DD." },
         },
         "required": ["from", "to"],
+    })
+}
+
+/// The id a create gives what it makes, so the rest of the same answer can name it.
+fn new_id(what: &str) -> Value {
+    json!({
+        "type": "string",
+        "description": format!(
+            "A new random UUID for the {what}, unused in the context. Other calls of the same \
+             answer name the new {what} by it; the app replaces it with its own when applying."
+        ),
+    })
+}
+
+/// A whole product, as the product form takes it.
+fn product() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" },
+            "brand": { "type": "string", "description": "Only when known." },
+            "unit": {
+                "type": "string",
+                "enum": ["g", "ml"],
+                "description": "Whether the figures are per 100 g or per 100 ml.",
+            },
+            "macros": {
+                "type": "object",
+                "description": "Per 100 of the unit, as on a typical package.",
+                "properties": {
+                    "energyKcal": { "type": "number" },
+                    "proteinG": { "type": "number" },
+                    "fatG": { "type": "number" },
+                    "carbohydratesG": { "type": "number" },
+                },
+                "required": ["energyKcal", "proteinG", "fatG", "carbohydratesG"],
+            },
+            "cost": { "type": "number", "description": "Price per 100 of the unit, only when the user gave one." },
+        },
+        "required": ["name", "unit", "macros"],
+    })
+}
+
+/// The fields of a product an update may change, every one optional.
+fn product_patch() -> Value {
+    json!({
+        "type": "object",
+        "description": "Only the fields that change.",
+        "properties": {
+            "name": { "type": "string" },
+            "brand": { "type": "string" },
+            "energyKcal": { "type": "number", "description": "Per 100 of the product's unit." },
+            "proteinG": { "type": "number", "description": "Per 100 of the product's unit." },
+            "fatG": { "type": "number", "description": "Per 100 of the product's unit." },
+            "carbohydratesG": { "type": "number", "description": "Per 100 of the product's unit." },
+            "cost": { "type": "number", "description": "Price per 100 of the product's unit." },
+        },
+    })
+}
+
+/// What a meal is made of.
+fn servings() -> Value {
+    json!({
+        "type": "array",
+        "description": "Every product of the meal with its amount; given, it replaces them all.",
+        "items": {
+            "type": "object",
+            "properties": {
+                "productId": { "type": "string", "description": "A product's id, or a newId created in this answer." },
+                "amount": { "type": "number", "description": "In the product's own unit." },
+            },
+            "required": ["productId", "amount"],
+        },
+    })
+}
+
+/// What a day plan holds, in order.
+fn items() -> Value {
+    json!({
+        "type": "array",
+        "description": "Every entry of the day in order; given, it replaces them all.",
+        "items": day_plan_item(),
     })
 }
 
@@ -172,7 +342,9 @@ fn item_ref() -> Value {
 
 #[cfg(test)]
 mod tests {
-    use mealprep_core::domain::{DateRange, DayPlanItem, ItemRef};
+    use mealprep_core::domain::{
+        DateRange, DayPlanItem, ItemRef, MealDraft, ProductPatch, Serving,
+    };
     use uuid::Uuid;
 
     use super::*;
@@ -196,7 +368,15 @@ mod tests {
             let properties = tool["input_schema"]["properties"].as_object().unwrap();
             let required = tool["input_schema"]["required"].as_array().unwrap();
             assert_eq!(properties.len(), required.len(), "{}", kind.name());
-            assert!(properties.contains_key("dates"), "{}", kind.name());
+            // A day edit names dates; an entity edit names none.
+            let entity_edit =
+                kind.name().starts_with("create-") || kind.name().starts_with("update-");
+            assert_eq!(
+                properties.contains_key("dates"),
+                !entity_edit,
+                "{}",
+                kind.name()
+            );
         }
     }
 
@@ -258,6 +438,68 @@ mod tests {
                 item: ItemRef::Product { product_id },
             }
         );
+    }
+
+    #[test]
+    fn an_entity_tool_call_becomes_the_operation_it_names() {
+        let new_id = Uuid::new_v4();
+        let product_id = Uuid::new_v4();
+        let created = operation(
+            "create-meal",
+            json!({
+                "newId": new_id,
+                "meal": {
+                    "label": "Oat bowl",
+                    "servings": [{ "productId": product_id, "amount": 80 }],
+                },
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            created,
+            Operation::CreateMeal {
+                new_id,
+                meal: MealDraft {
+                    label: "Oat bowl".to_owned(),
+                    category_id: None,
+                    servings: vec![Serving {
+                        product_id,
+                        amount: 80.0,
+                    }],
+                },
+            }
+        );
+
+        // A patch takes only what changes; the rest stays absent rather than zeroed.
+        let updated = operation(
+            "update-product",
+            json!({ "productId": product_id, "changes": { "energyKcal": 400 } }),
+        )
+        .unwrap();
+        assert_eq!(
+            updated,
+            Operation::UpdateProduct {
+                product_id,
+                changes: ProductPatch {
+                    energy_kcal: Some(400.0),
+                    ..ProductPatch::default()
+                },
+            }
+        );
+
+        let product = operation(
+            "create-product",
+            json!({
+                "newId": new_id,
+                "product": {
+                    "name": "Oats",
+                    "unit": "g",
+                    "macros": { "energyKcal": 370, "proteinG": 13, "fatG": 7, "carbohydratesG": 60 },
+                },
+            }),
+        )
+        .unwrap();
+        assert!(matches!(product, Operation::CreateProduct { .. }));
     }
 
     #[test]

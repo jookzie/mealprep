@@ -1,72 +1,80 @@
 //! Moving the whole database in and out of the application as one file.
 //!
-//! Both go through one folder: the application's own directory in shared storage,
-//! `Android/data/<application id>/files/Download` on a phone. The application needs no
-//! permission for it, and a computer reaches it over USB or adb. Android removes it with the
-//! application, so an export only counts as a backup once it is copied off the phone.
+//! Both go through the system's file picker, so the file can be saved to or read from
+//! anywhere the phone offers — Downloads, a cloud drive, a USB stick. On Android the
+//! picker answers with a content URI rather than a path, which the fs plugin opens through
+//! the platform; nothing here reads a path the user typed.
+//!
+//! Before an import replaces anything, what is there now is kept in the application's own
+//! folder in shared storage, `Android/data/<application id>/files/Download` on a phone,
+//! which needs no permission and which a computer reaches over USB or adb.
 
 use std::{
-    fs, io,
+    fs::{self, File},
+    io,
     path::{Path, PathBuf},
 };
 
-use mealprep_core::{Entity, Error as CoreError};
+use mealprep_core::Error as CoreError;
 use mealprep_sqlite::{SqliteStore, prepare_import};
 use tauri::{AppHandle, Manager, Runtime, State};
+use tauri_plugin_dialog::{DialogExt, FilePath};
+use tauri_plugin_fs::{FsExt, OpenOptions};
 use time::{OffsetDateTime, macros::format_description};
 
 use crate::{error::Error, result::Result, setup};
 
-/// The file an import reads. One fixed name, so an import never picks up an older export
-/// that happens to sit in the same folder.
-const IMPORT_FILE: &str = "mealprep-import.db";
-
-/// Where exports land and the import is read from, as a path to show the user.
+/// Asks where to save a copy of everything and writes it there. Answers `false` when the
+/// user closed the picker without choosing.
 #[tauri::command]
-pub async fn database_folder(app: AppHandle) -> Result<String> {
-    Ok(folder(&app)?.display().to_string())
+pub async fn export_database(app: AppHandle, store: State<'_, SqliteStore>) -> Result<bool> {
+    let name = format!("mealprep-{}.db", stamp());
+    let dialog = app.dialog().file().set_file_name(&name);
+    // Android picks the kind of document to create by MIME type, and has none for `.db`.
+    #[cfg(target_os = "android")]
+    let dialog = dialog.add_filter("Mealprep database", &["application/octet-stream"]);
+    #[cfg(not(target_os = "android"))]
+    let dialog = dialog.add_filter("Mealprep database", &["db"]);
+    let Some(target) = choose(move || dialog.blocking_save_file()).await? else {
+        return Ok(false);
+    };
+
+    // Taken after the choice rather than before, so the copy is as of the moment it lands.
+    let snapshot = scratch(&app, &name)?;
+    store.snapshot_to(&snapshot).await?;
+    let written = copy_to(&app, &snapshot, target);
+    fs::remove_file(&snapshot).ok();
+    written.map_err(internal)?;
+    Ok(true)
 }
 
-/// Writes a copy of everything to the folder and answers the file's name.
-#[tauri::command]
-pub async fn export_database(app: AppHandle, store: State<'_, SqliteStore>) -> Result<String> {
-    let path = folder(&app)?.join(format!("mealprep-export-{}.db", stamp()));
-    store.snapshot_to(&path).await?;
-    Ok(file_name(&path))
-}
-
-/// Replaces the database with `mealprep-import.db` from the folder and closes the
-/// application, which has to be reopened to read it.
+/// Asks for a database file and replaces everything with it, then closes the application,
+/// which has to be reopened to read it. Answers `false` when the user chose nothing.
 ///
-/// What is there now is exported first, so an import is never the only copy of anything.
-/// The file is checked on a staged copy before anything is replaced, because a database
-/// this build cannot open would stop the application starting. Closing is part of the
-/// operation for the reason `reset_demo_data` gives: the open store holds the old file by
-/// descriptor, so only a restart reads the new one.
+/// What is there now is kept first, so an import is never the only copy of anything. The
+/// file is checked on a staged copy before anything is replaced, because a database this
+/// build cannot open would stop the application starting. Closing is part of the operation
+/// for the reason `reset_demo_data` gives: the open store holds the old file by descriptor,
+/// so only a restart reads the new one.
 #[tauri::command]
-pub async fn import_database(app: AppHandle, store: State<'_, SqliteStore>) -> Result<()> {
-    let folder = folder(&app)?;
-    let source = folder.join(IMPORT_FILE);
-    if !source.exists() {
-        return Err(CoreError::Invalid {
-            entity: Entity::Database,
-            reason: format!("there is no {IMPORT_FILE} in {}", folder.display()),
-        }
-        .into());
-    }
+pub async fn import_database(app: AppHandle, store: State<'_, SqliteStore>) -> Result<bool> {
+    let dialog = app.dialog().file();
+    let Some(source) = choose(move || dialog.blocking_pick_file()).await? else {
+        return Ok(false);
+    };
 
     let database = setup::database_path(&app).map_err(internal)?;
     let staged = database.with_extension("db.importing");
     remove_with_sidecars(&staged).map_err(internal)?;
-    copy_with_sidecars(&source, &staged).map_err(internal)?;
+    copy_from(&app, source, &staged).map_err(internal)?;
     if let Err(error) = prepare_import(&staged).await {
         remove_with_sidecars(&staged).ok();
         return Err(error.into());
     }
 
-    let stamp = stamp();
+    let backups = backup_folder(&app)?;
     store
-        .snapshot_to(&folder.join(format!("mealprep-before-import-{stamp}.db")))
+        .snapshot_to(&backups.join(format!("mealprep-before-import-{}.db", stamp())))
         .await?;
 
     // Renamed into place, so an interruption leaves either the old database or the new
@@ -76,19 +84,46 @@ pub async fn import_database(app: AppHandle, store: State<'_, SqliteStore>) -> R
     remove_sidecars(&database).map_err(internal)?;
     remove_sidecars(&staged).map_err(internal)?;
 
-    // Out of the way, so the same file cannot be imported twice by accident.
-    fs::rename(
-        &source,
-        folder.join(format!("mealprep-imported-{stamp}.db")),
-    )
-    .map_err(internal)?;
-    remove_sidecars(&source).map_err(internal)?;
-
     app.exit(0);
+    Ok(true)
+}
+
+/// Runs a blocking picker off the async runtime: on Android it waits for an activity
+/// result, which must not hold a runtime thread.
+async fn choose(
+    pick: impl FnOnce() -> Option<FilePath> + Send + 'static,
+) -> Result<Option<FilePath>> {
+    tauri::async_runtime::spawn_blocking(pick)
+        .await
+        .map_err(internal)
+}
+
+fn copy_to(app: &AppHandle<impl Runtime>, from: &Path, to: FilePath) -> io::Result<()> {
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    let mut target = app.fs().open(to, options)?;
+    io::copy(&mut File::open(from)?, &mut target)?;
+    target.sync_all()
+}
+
+fn copy_from(app: &AppHandle<impl Runtime>, from: FilePath, to: &Path) -> io::Result<()> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    let mut source = app.fs().open(from, options)?;
+    io::copy(&mut source, &mut File::create(to)?)?;
     Ok(())
 }
 
-fn folder(app: &AppHandle<impl Runtime>) -> Result<PathBuf> {
+/// A file in the application's cache, for a snapshot on its way to where the user chose.
+fn scratch(app: &AppHandle<impl Runtime>, name: &str) -> Result<PathBuf> {
+    let folder = app.path().app_cache_dir().map_err(internal)?;
+    fs::create_dir_all(&folder).map_err(internal)?;
+    let path = folder.join(name);
+    remove_with_sidecars(&path).map_err(internal)?;
+    Ok(path)
+}
+
+fn backup_folder(app: &AppHandle<impl Runtime>) -> Result<PathBuf> {
     let folder = app.path().download_dir().map_err(internal)?;
     fs::create_dir_all(&folder).map_err(internal)?;
     Ok(folder)
@@ -105,29 +140,10 @@ fn stamp() -> String {
         .expect("internal error: a timestamp always formats")
 }
 
-fn file_name(path: &Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default()
-}
-
 fn sidecar(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_owned();
     name.push(suffix);
     PathBuf::from(name)
-}
-
-/// A file copied off a device may come with the write-ahead log that holds its newest
-/// writes; the log travels with it and `prepare_import` folds it in.
-fn copy_with_sidecars(from: &Path, to: &Path) -> io::Result<()> {
-    fs::copy(from, to)?;
-    for suffix in ["-wal", "-shm"] {
-        let log = sidecar(from, suffix);
-        if log.exists() {
-            fs::copy(&log, sidecar(to, suffix))?;
-        }
-    }
-    Ok(())
 }
 
 fn remove_sidecars(path: &Path) -> io::Result<()> {

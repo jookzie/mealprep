@@ -18,9 +18,9 @@ use mealprep_core::{
     Entity, Error, Result,
     domain::{
         AssistantContext, AssistantRecord, AssistantRecordDraft, CalendarDay, Category,
-        CategoryDraft, CategoryScope, DateRange, DayPlan, DayPlanDraft, DayPlanItem, ItemRef,
-        Macros, Meal, MealDraft, Nutrients, Operation, Product, ProductDraft, Proposal,
-        ResolvedDayPlan, ResolvedDayPlanItem, Targets, Unit,
+        CategoryDraft, CategoryScope, DateRange, DayPlan, DayPlanDraft, DayPlanItem, EntityAction,
+        EntityKind, ItemRef, Macros, Meal, MealDraft, Nutrients, Operation, Product, ProductDraft,
+        ProductPatch, Proposal, ResolvedDayPlan, ResolvedDayPlanItem, Serving, Targets, Unit,
     },
     service::Mealprep,
     store::{
@@ -96,14 +96,35 @@ fn now() -> OffsetDateTime {
 impl ProductStore for FakeStore {
     async fn create_product(
         &self,
-        _draft: &ProductDraft,
-        _source_code: Option<&str>,
+        draft: &ProductDraft,
+        source_code: Option<&str>,
     ) -> Result<Product> {
-        Err(unused("create_product"))
+        let product = Product {
+            id: Uuid::new_v4(),
+            name: draft.name.clone(),
+            unit: draft.unit,
+            macros: draft.macros,
+            nutrients: draft.nutrients.clone(),
+            cost: draft.cost,
+            brand: draft.brand.clone(),
+            source_code: source_code.map(str::to_owned),
+            created_at: now(),
+            updated_at: now(),
+        };
+        self.state().products.push(product.clone());
+        Ok(product)
     }
 
-    async fn get_product(&self, _id: Uuid) -> Result<Product> {
-        Err(unused("get_product"))
+    async fn get_product(&self, id: Uuid) -> Result<Product> {
+        self.state()
+            .products
+            .iter()
+            .find(|product| product.id == id)
+            .cloned()
+            .ok_or_else(|| Error::NotFound {
+                entity: Entity::Product,
+                id: id.to_string(),
+            })
     }
 
     async fn list_products(&self) -> Result<Vec<Product>> {
@@ -121,8 +142,24 @@ impl ProductStore for FakeStore {
         Ok(products)
     }
 
-    async fn update_product(&self, _id: Uuid, _draft: &ProductDraft) -> Result<Product> {
-        Err(unused("update_product"))
+    async fn update_product(&self, id: Uuid, draft: &ProductDraft) -> Result<Product> {
+        let mut state = self.state();
+        let product = state
+            .products
+            .iter_mut()
+            .find(|product| product.id == id)
+            .ok_or_else(|| Error::NotFound {
+                entity: Entity::Product,
+                id: id.to_string(),
+            })?;
+        product.name = draft.name.clone();
+        product.unit = draft.unit;
+        product.macros = draft.macros;
+        product.nutrients = draft.nutrients.clone();
+        product.cost = draft.cost;
+        product.brand = draft.brand.clone();
+        product.updated_at = now();
+        Ok(product.clone())
     }
 
     async fn delete_product(&self, _id: Uuid) -> Result<()> {
@@ -131,12 +168,29 @@ impl ProductStore for FakeStore {
 }
 
 impl MealStore for FakeStore {
-    async fn create_meal(&self, _draft: &MealDraft) -> Result<Meal> {
-        Err(unused("create_meal"))
+    async fn create_meal(&self, draft: &MealDraft) -> Result<Meal> {
+        let meal = Meal {
+            id: Uuid::new_v4(),
+            label: draft.label.clone(),
+            category_id: draft.category_id,
+            servings: draft.servings.clone(),
+            created_at: now(),
+            updated_at: now(),
+        };
+        self.state().meals.push(meal.clone());
+        Ok(meal)
     }
 
-    async fn get_meal(&self, _id: Uuid) -> Result<Meal> {
-        Err(unused("get_meal"))
+    async fn get_meal(&self, id: Uuid) -> Result<Meal> {
+        self.state()
+            .meals
+            .iter()
+            .find(|meal| meal.id == id)
+            .cloned()
+            .ok_or_else(|| Error::NotFound {
+                entity: Entity::Meal,
+                id: id.to_string(),
+            })
     }
 
     async fn list_meals(&self) -> Result<Vec<Meal>> {
@@ -154,8 +208,21 @@ impl MealStore for FakeStore {
         Ok(meals)
     }
 
-    async fn update_meal(&self, _id: Uuid, _draft: &MealDraft) -> Result<Meal> {
-        Err(unused("update_meal"))
+    async fn update_meal(&self, id: Uuid, draft: &MealDraft) -> Result<Meal> {
+        let mut state = self.state();
+        let meal = state
+            .meals
+            .iter_mut()
+            .find(|meal| meal.id == id)
+            .ok_or_else(|| Error::NotFound {
+                entity: Entity::Meal,
+                id: id.to_string(),
+            })?;
+        meal.label = draft.label.clone();
+        meal.category_id = draft.category_id;
+        meal.servings = draft.servings.clone();
+        meal.updated_at = now();
+        Ok(meal.clone())
     }
 
     async fn delete_meal(&self, _id: Uuid) -> Result<()> {
@@ -204,8 +271,18 @@ impl CategoryStore for FakeStore {
 }
 
 impl DayPlanStore for FakeStore {
-    async fn create_day_plan(&self, _draft: &DayPlanDraft) -> Result<DayPlan> {
-        Err(unused("create_day_plan"))
+    async fn create_day_plan(&self, draft: &DayPlanDraft) -> Result<DayPlan> {
+        let plan = DayPlan {
+            id: Uuid::new_v4(),
+            label: draft.label.clone(),
+            category_id: draft.category_id,
+            source_plan_id: None,
+            items: draft.items.clone(),
+            created_at: now(),
+            updated_at: now(),
+        };
+        self.state().plans.push(plan.clone());
+        Ok(plan)
     }
 
     async fn create_day_plan_copy(
@@ -381,6 +458,7 @@ impl AssistantStore for FakeStore {
             rationale: draft.rationale.clone(),
             operations: draft.operations.clone(),
             changes: draft.changes.clone(),
+            entity_changes: draft.entity_changes.clone(),
             created_at: now(),
         };
         self.state().log.insert(0, record.clone());
@@ -636,6 +714,126 @@ async fn applying_detaches_only_the_dates_it_names() {
     assert_eq!(log[0].id, record.id);
     assert_eq!(log[0].request, "next 4 days I have 40 g less whey");
     assert_eq!(log[0].operations, operations);
+}
+
+#[tokio::test]
+async fn applying_writes_new_things_with_their_real_ids_and_puts_them_on_dates() {
+    let harness = harness(|_| Vec::new());
+    let (rules, fixture) = (&harness.rules, &harness.fixture);
+    let (oats, bowl, plan) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+
+    let operations = vec![
+        Operation::CreateProduct {
+            new_id: oats,
+            product: ProductDraft {
+                name: "Oats".to_owned(),
+                unit: Unit::Gram,
+                macros: Macros {
+                    energy_kcal: 370.0,
+                    fat_g: 7.0,
+                    protein_g: 13.0,
+                    carbohydrates_g: 60.0,
+                },
+                nutrients: Nutrients::new(),
+                cost: None,
+                brand: None,
+            },
+        },
+        Operation::CreateMeal {
+            new_id: bowl,
+            meal: MealDraft {
+                label: "Oat bowl".to_owned(),
+                category_id: None,
+                servings: vec![
+                    Serving {
+                        product_id: oats,
+                        amount: 80.0,
+                    },
+                    Serving {
+                        product_id: fixture.whey,
+                        amount: 30.0,
+                    },
+                ],
+            },
+        },
+        Operation::CreateDayPlan {
+            new_id: plan,
+            day_plan: DayPlanDraft {
+                label: "Oat day".to_owned(),
+                category_id: None,
+                items: vec![DayPlanItem::Meal { meal_id: bowl }],
+            },
+        },
+        Operation::AssignPlan {
+            dates: DateRange::just(fixture.today),
+            day_plan_id: plan,
+        },
+        Operation::UpdateProduct {
+            product_id: fixture.whey,
+            changes: ProductPatch {
+                cost: Some(2.5),
+                ..ProductPatch::default()
+            },
+        },
+    ];
+    let record = rules
+        .apply_assistant_edit(proposal(
+            "an oat day today; whey costs 2.50 now",
+            operations,
+        ))
+        .await
+        .unwrap();
+
+    let written: Vec<_> = record
+        .entity_changes
+        .iter()
+        .map(|change| (change.kind, change.action, change.label.as_str()))
+        .collect();
+    assert_eq!(
+        written,
+        vec![
+            (EntityKind::Product, EntityAction::Create, "Oats"),
+            (EntityKind::Product, EntityAction::Update, "Whey"),
+            (EntityKind::Meal, EntityAction::Create, "Oat bowl"),
+            (EntityKind::DayPlan, EntityAction::Create, "Oat day"),
+        ]
+    );
+    // The store's ids, not the ones the model picked.
+    let real = |kind| {
+        record
+            .entity_changes
+            .iter()
+            .find(|change| change.kind == kind && change.action == EntityAction::Create)
+            .unwrap()
+            .id
+    };
+    let (real_oats, real_bowl, real_plan) = (
+        real(EntityKind::Product),
+        real(EntityKind::Meal),
+        real(EntityKind::DayPlan),
+    );
+    assert!(real_oats != oats && real_bowl != bowl && real_plan != plan);
+
+    // Each new thing names the others by their real ids, and today is on the new plan.
+    let meal = rules.get_meal(real_bowl).await.unwrap();
+    assert_eq!(meal.entity.servings[0].product_id, real_oats);
+    let day_plan = rules.get_day_plan(real_plan).await.unwrap();
+    assert_eq!(day_plan.label, "Oat day");
+    let today = rules
+        .list_calendar_days(fixture.today, fixture.today)
+        .await
+        .unwrap();
+    assert_eq!(today[0].day_plan_id, real_plan);
+    assert_eq!(record.changes[0].day_plan_id, Some(real_plan));
+
+    // The update kept every field it did not name.
+    let whey = rules.get_product(fixture.whey).await.unwrap();
+    assert_eq!(whey.cost, Some(2.5));
+    assert!((whey.macros.protein_g - 75.0).abs() < 1e-9);
+
+    // And the log keeps what was created, for the history.
+    let log = rules.list_assistant_requests().await.unwrap();
+    assert_eq!(log[0].entity_changes.len(), 4);
 }
 
 #[tokio::test]

@@ -46,15 +46,24 @@ const TIMEOUT: Duration = Duration::from_secs(120);
 /// a model that knows a past date will be refused proposes a workable edit instead of one
 /// the user has to watch fail.
 const SYSTEM: &str = "\
-You turn one plain-language correction to a meal plan into typed operations by calling the \
+You turn one plain-language request about a meal plan into typed operations by calling the \
 tools. An edit only happens through a tool call; prose never changes anything.
 
 The user's data comes with the request as JSON: `today`, their daily macro `targets`, \
 `days` (one entry per date you can see, with the plan on it and that plan's order), and the \
-`plans`, `meals` and `products` they have, each with its id.
+`plans` (with their items), `meals` (with their servings) and `products` (with macros per \
+100 g or ml) they have, each with its id.
 
-- Use only ids that appear in that context. Never invent one, and never guess at something \
-you cannot find by name — say what is missing instead.
+- Use only ids that appear in that context, or the newId of something a create call in \
+the same reply makes. Never guess at something you cannot find by name — say what is \
+missing instead.
+- Prefer what exists: create a product, meal or day plan only when the request asks for \
+something new or nothing in the context is it. A new product needs figures you can stand \
+behind — the user's, or a typical package's for a common food.
+- Updating a product, meal or day plan changes it everywhere it is used, past dates \
+included. When the request is about some dates only (\"tomorrow I have no banana\"), edit \
+those dates instead; update the thing itself only when the request is about it (\"my \
+porridge has 60 g of oats now\").
 - Resolve every relative date against `today` and give absolute YYYY-MM-DD dates. \"The \
 next four days\" starts today.
 - A date before `today` is refused by the app unless the user asked for a past day in so \
@@ -69,7 +78,8 @@ sequence a day carries. Say which two entries it could be instead of picking one
 needs, make no call and say in one sentence what is missing.
 
 Your text reply is shown to the user above the change, for them to confirm or discard, so \
-make it one or two plain sentences saying what you did. The app checks every operation \
+make it one or two plain sentences saying what you did, in everyday words: no ids, no tool \
+names. The app checks every operation \
 against the real data and applies nothing without that confirmation, so propose what the \
 request actually says rather than hedging.";
 
@@ -318,6 +328,12 @@ mod tests {
                 id: uuid!("3f9a1c52-0000-4000-8000-000000000001"),
                 name: "Whey".to_owned(),
                 unit: Unit::Gram,
+                macros: Macros {
+                    energy_kcal: 380.0,
+                    fat_g: 6.0,
+                    protein_g: 80.0,
+                    carbohydrates_g: 8.0,
+                },
             }],
         }
     }

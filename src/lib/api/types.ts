@@ -185,7 +185,39 @@ export type Operation =
 	| { kind: 'remove-item'; dates: DateRange; item: ItemRef }
 	| { kind: 'swap-meal'; dates: DateRange; fromMealId: string; toMealId: string }
 	| { kind: 'assign-plan'; dates: DateRange; dayPlanId: string }
-	| { kind: 'clear-plan'; dates: DateRange };
+	| { kind: 'clear-plan'; dates: DateRange }
+	| { kind: 'create-product'; newId: string; product: ProductDraft }
+	| { kind: 'update-product'; productId: string; changes: ProductPatch }
+	| { kind: 'create-meal'; newId: string; meal: MealDraft }
+	| { kind: 'update-meal'; mealId: string; changes: MealPatch }
+	| { kind: 'create-day-plan'; newId: string; dayPlan: DayPlanDraft }
+	| { kind: 'update-day-plan'; dayPlanId: string; changes: DayPlanPatch };
+
+/** The fields of a product an update changes; what is left out keeps its value. */
+export type ProductPatch = {
+	name?: string;
+	brand?: string;
+	energyKcal?: number;
+	proteinG?: number;
+	fatG?: number;
+	carbohydratesG?: number;
+	cost?: number;
+};
+
+/** The parts of a meal an update changes; servings, when given, replace them all. */
+export type MealPatch = {
+	label?: string;
+	servings?: Serving[];
+};
+
+/** The parts of a day plan an update changes; items, when given, replace them all. */
+export type DayPlanPatch = {
+	label?: string;
+	items?: DayPlanItemDraft[];
+};
+
+export type EntityKind = 'product' | 'meal' | 'day-plan';
+export type EntityAction = 'create' | 'update';
 
 export type OperationKind = Operation['kind'];
 
@@ -210,9 +242,23 @@ export type PreviewDay = {
 	detaches: boolean;
 };
 
+/** What one product, meal or day plan would become. */
+export type PreviewEntity = {
+	kind: EntityKind;
+	action: EntityAction;
+	label: string;
+	changes: string[];
+	/** Per 100 g or ml for a product; the whole meal or day for the others. */
+	macros: Macros;
+	/** How many dates in view already use it, and so follow an update. */
+	datesUsing: number;
+};
+
 /** A checked proposal, as the user reads it before confirming. */
 export type Preview = {
 	proposal: Proposal;
+	/** The products, meals and day plans it creates or changes. */
+	entities: PreviewEntity[];
 	days: PreviewDay[];
 	targets?: Macros;
 };
@@ -228,12 +274,23 @@ export type AppliedChange = {
 	changes: string[];
 };
 
+/** What an applied request did to one product, meal or day plan. */
+export type AppliedEntityChange = {
+	kind: EntityKind;
+	action: EntityAction;
+	id: string;
+	label: string;
+	changes: string[];
+};
+
 export type AssistantRecord = {
 	id: string;
 	request: string;
 	rationale: string;
 	operations: Operation[];
 	changes: AppliedChange[];
+	/** Empty in records from before the assistant could create or change these. */
+	entityChanges: AppliedEntityChange[];
 	createdAt: string;
 };
 

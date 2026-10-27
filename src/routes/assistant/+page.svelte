@@ -4,15 +4,15 @@
 	import MacroLine from '$lib/components/MacroLine.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import {
-		dayDelta,
+		appliedEntityLine,
+		entityHeading,
+		entityReach,
 		isPastDay,
-		operationLabel,
 		recordSummary,
 		reversalHint,
 		summarisePreview,
 	} from '$lib/domain/assistant';
 	import { formatSigned } from '$lib/domain/format';
-	import { MACRO_KEYS, MACRO_LABELS } from '$lib/domain/macros';
 	import { dayMonthLabel, fullDateLabel, todayIso, weekdayLabel } from '$lib/domain/week';
 	import type { PageProps } from './$types';
 
@@ -32,7 +32,7 @@
 	const examples = [
 		'next 4 days I have 40 g less whey',
 		'swap tomorrow for a rest day',
-		'add a banana to Friday',
+		'new meal: 80 g oats with 30 g whey',
 	];
 
 	async function saveKey() {
@@ -50,10 +50,6 @@
 		assistant.discard();
 	}
 
-	function formatMacro(key: (typeof MACRO_KEYS)[number], value: number): string {
-		return formatSigned(value, key === 'energyKcal' ? 'kcal' : 'g');
-	}
-
 	const time = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 </script>
 
@@ -63,8 +59,9 @@
 	<section class="card stack">
 		<h2>Turn the assistant on</h2>
 		<p class="small">
-			The assistant reads a plain-language correction — "next 4 days I have 40 g less whey" — and
-			proposes the edit. It never writes: you see exactly which days change and confirm.
+			The assistant reads a plain-language request — "next 4 days I have 40 g less whey", "make a
+			meal of oats and whey" — and proposes the change. It never writes on its own: you see what
+			would change and confirm.
 		</p>
 		<p class="small">
 			It needs your own Anthropic API key. The key is stored on this device and is sent nowhere
@@ -74,10 +71,10 @@
 		<details class="small">
 			<summary>What leaves the device when you ask</summary>
 			<p class="muted">
-				Your request, and a compact view of the plan around today: the dates in view with the
-				labels and amounts on them, and the names and ids of your plans, meals and products,
-				with your macro targets. Nothing else — no weigh-ins, no prices, no history. Nothing is
-				sent until you ask a question, and nothing at all is sent while there is no key.
+				Your request, and a compact view of your planning: the days around today with what is on
+				them, your plans, meals and products with what they hold and their macros, and your
+				targets. Nothing else — no weigh-ins, no prices, no history. Nothing is sent until you ask,
+				and nothing at all while there is no key.
 			</p>
 		</details>
 		<label class="field">
@@ -99,7 +96,7 @@
 {:else}
 	<section class="card stack">
 		<label class="field">
-			<span>What changed?</span>
+			<span>What should change?</span>
 			<textarea
 				rows="3"
 				placeholder="next 4 days I have 40 g less whey"
@@ -138,13 +135,30 @@
 
 		{#if summary.isEmpty}
 			<p class="muted small">
-				{summary.label} Nothing will be written. Try naming the product or meal to change.
+				{summary.label} Try naming the product, meal or day to change.
 			</p>
 		{:else}
 			<ol class="list">
+				{#each preview.entities as entity, index (index)}
+					{@const reach = entityReach(entity)}
+					<li class="entry stack">
+						<div class="row spread">
+							<strong class="grow truncate">{entity.label}</strong>
+							<span class="pill">{entityHeading(entity)}</span>
+						</div>
+						<ul class="changes small">
+							{#each entity.changes as line, lineIndex (lineIndex)}
+								<li>{line}</li>
+							{/each}
+						</ul>
+						<MacroLine macros={entity.macros} />
+						{#if reach}
+							<p class="small muted">{reach}</p>
+						{/if}
+					</li>
+				{/each}
 				{#each preview.days as day (day.date)}
-					{@const delta = dayDelta(day)}
-					<li class="day stack">
+					<li class="entry stack">
 						<div class="row spread">
 							<strong>{weekdayLabel(day.date)} {dayMonthLabel(day.date)}</strong>
 							<span class="pill">{day.label ?? 'Unplanned'}</span>
@@ -155,26 +169,9 @@
 							{/each}
 						</ul>
 						<MacroLine macros={day.after} />
-						<p class="small muted">
-							Change:
-							{#each MACRO_KEYS as key (key)}
-								<span class="figure">{MACRO_LABELS[key]} {formatMacro(key, delta[key])}</span>
-							{/each}
-						</p>
 						{#if day.targetDelta}
 							<p class="small muted">
-								Against target:
-								{#each MACRO_KEYS as key (key)}
-									<span class="figure">
-										{MACRO_LABELS[key]} {formatMacro(key, day.targetDelta[key])}
-									</span>
-								{/each}
-							</p>
-						{/if}
-						{#if day.detaches}
-							<p class="small muted">
-								This day gets its own copy of {day.label}. Every other day on that plan — the
-								days already past included — keeps the original.
+								{formatSigned(day.targetDelta.energyKcal, 'kcal')} against your target
 							</p>
 						{/if}
 						{#if isPastDay(day, today)}
@@ -185,15 +182,6 @@
 					</li>
 				{/each}
 			</ol>
-
-			<details class="small">
-				<summary>The {preview.proposal.operations.length} typed operations</summary>
-				<ul class="changes muted">
-					{#each preview.proposal.operations as operation, index (index)}
-						<li>{operationLabel(operation)}</li>
-					{/each}
-				</ul>
-			</details>
 		{/if}
 
 		<div class="row spread">
@@ -227,8 +215,18 @@
 					{/if}
 					<span class="small muted">{recordSummary(record)}</span>
 					<details class="small">
-						<summary>What it changed, and how to undo it</summary>
+						<summary>What it changed</summary>
 						<ul class="list">
+							{#each record.entityChanges ?? [] as change, index (index)}
+								<li class="stack tight">
+									<strong class="small">{appliedEntityLine(change)}</strong>
+									<ul class="changes muted">
+										{#each change.changes as line, lineIndex (lineIndex)}
+											<li>{line}</li>
+										{/each}
+									</ul>
+								</li>
+							{/each}
 							{#each record.changes as change (change.date)}
 								<li class="stack tight">
 									<strong class="small">{fullDateLabel(change.date)}</strong>
@@ -301,13 +299,13 @@
 		font-style: italic;
 	}
 
-	.day {
+	.entry {
 		gap: 0.3rem;
 		padding: 0.6rem 0;
 		border-top: 1px solid var(--border);
 	}
 
-	.day:first-child {
+	.entry:first-child {
 		border-top: none;
 		padding-top: 0;
 	}
@@ -319,12 +317,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.15rem;
-	}
-
-	.figure {
-		display: inline-block;
-		margin-left: 0.5rem;
-		font-variant-numeric: tabular-nums;
 	}
 
 	/* The one thing on this screen the user cannot undo by planning differently, so it is

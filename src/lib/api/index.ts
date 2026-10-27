@@ -118,12 +118,14 @@ export const isAcceptanceBuild = () => call<boolean>('acceptance_build').catch((
  */
 export const resetDemoData = () => call<void>('reset_demo_data');
 
-/** The folder exports land in and the import is read from, as a path to show. */
-export const loadDatabaseFolder = () => call<string>('database_folder');
-/** Writes a copy of everything to the folder and answers the file's name. */
-export const exportDatabase = () => call<string>('export_database');
 /**
- * Replaces everything with `mealprep-import.db` from the folder, after exporting what is
- * there now, and closes the app. Like `resetDemoData`, it never settles on success.
+ * Asks where to save a copy of everything, through the system's file picker, and writes it
+ * there. Answers false when the picker was closed without a choice.
  */
-export const importDatabase = () => call<void>('import_database');
+export const exportDatabase = () => call<boolean>('export_database');
+/**
+ * Asks for a database file and replaces everything with it, keeping what is there now
+ * first, then closes the app. Answers false when nothing was chosen; like `resetDemoData`,
+ * it never settles on success.
+ */
+export const importDatabase = () => call<boolean>('import_database');

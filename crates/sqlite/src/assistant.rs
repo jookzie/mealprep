@@ -1,6 +1,8 @@
 use mealprep_core::{
     Entity, Error, Result,
-    domain::{AppliedChange, AssistantRecord, AssistantRecordDraft, Operation},
+    domain::{
+        AppliedChange, AppliedEntityChange, AssistantRecord, AssistantRecordDraft, Operation,
+    },
     store::AssistantStore,
 };
 use uuid::Uuid;
@@ -23,8 +25,8 @@ const CLEAR_SETTING: &str = "UPDATE app_settings SET deleted_at = ?, updated_at 
     WHERE key = ? AND deleted_at IS NULL";
 
 const RECORD: &str = "INSERT INTO assistant_requests \
-    (id, request, rationale, operations, changes, created_at, updated_at) \
-    VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *";
+    (id, request, rationale, operations, changes, entity_changes, created_at, updated_at) \
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *";
 const LIST: &str = "SELECT * FROM assistant_requests \
     WHERE deleted_at IS NULL ORDER BY created_at DESC, id LIMIT ?";
 
@@ -75,6 +77,7 @@ impl AssistantStore for SqliteStore {
             .bind(&draft.rationale)
             .bind(encode_operations(&draft.operations)?)
             .bind(encode_changes(&draft.changes)?)
+            .bind(encode_entity_changes(&draft.entity_changes)?)
             .bind(&now)
             .bind(&now)
             .fetch_one(&self.pool)
@@ -100,6 +103,7 @@ struct RequestRow {
     rationale: String,
     operations: String,
     changes: String,
+    entity_changes: String,
     created_at: String,
 }
 
@@ -111,11 +115,14 @@ impl RequestRow {
             rationale,
             operations,
             changes,
+            entity_changes,
             created_at,
         } = self;
 
         let operations: Vec<Operation> = serde_json::from_str(&operations).map_err(internal)?;
         let changes: Vec<AppliedChange> = serde_json::from_str(&changes).map_err(internal)?;
+        let entity_changes: Vec<AppliedEntityChange> =
+            serde_json::from_str(&entity_changes).map_err(internal)?;
 
         Ok(AssistantRecord {
             id: row::parse_id(&id)?,
@@ -123,6 +130,7 @@ impl RequestRow {
             rationale,
             operations,
             changes,
+            entity_changes,
             created_at: row::parse_timestamp(&created_at)?,
         })
     }
@@ -137,6 +145,10 @@ fn encode_operations(operations: &[Operation]) -> Result<String> {
 }
 
 fn encode_changes(changes: &[AppliedChange]) -> Result<String> {
+    serde_json::to_string(changes).map_err(unrecordable)
+}
+
+fn encode_entity_changes(changes: &[AppliedEntityChange]) -> Result<String> {
     serde_json::to_string(changes).map_err(unrecordable)
 }
 
