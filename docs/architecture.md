@@ -95,7 +95,7 @@ src/
     components/        forms, pickers, meters, the weight chart, the scan overlay,
                        the page header
     memory.svelte.ts   what the user was in the middle of, kept across screens
-    assistant.svelte.ts  the assistant's request and pending proposal
+    assistant.svelte.ts  the assistant chat: its messages and the proposal waiting on Apply
 ```
 Routes own all I/O. Components take data and callbacks, and never call `invoke`.
 
@@ -254,6 +254,7 @@ offers to start over.
 - `Operation` — one typed edit the assistant may propose. A day edit is bounded to a `DateRange`: adjust a loose product's amount, add an item, remove an item, swap a meal, assign a plan, clear a plan. An entity edit names no date: create a product, meal or day plan, change any of its fields through a patch (`ProductPatch`, `MealPatch`, `DayPlanPatch`, `TargetsPatch`, where `null` clears a field that can be absent), or sync a product from the catalogue. `OperationKind` is the same set without the arguments, so an adapter derives its tools from it.
 - `Proposal` — a request, the model's rationale, and its operations. Unchecked. `Preview` is a checked proposal: one `PreviewDay` per date that would change, carrying the change lines, the day before and after, the deviation from the targets, and whether applying detaches that date.
 - `AssistantRecord` — one applied request: the text, the rationale, the operations, and an `AppliedChange` per date with what it pointed at before. That last field is the undo: re-assign it, or clear the date when there was none.
+- `ChatTurn` — one earlier exchange of the chat: the request, the reply, and its `TurnOutcome` (answered, applied, discarded). It travels back with the next request and is read only by the `Assistant`, which replays it as alternating messages with the plan on the latest one alone; the rules check the new request on its own words. The frontend holds the chat in memory (`assistant.svelte.ts`) and nothing stores it.
 - `AssistantKeyStatus` — whether a key is stored and its last four characters. The key itself never crosses the IPC bridge outward.
 - `WeightEntry` — date → kilograms, at most one per date. `WeightSeries` is the derived read: one point per day from the first weigh-in to the last, each carrying the trend and the measurement where there was one, plus the trend's current value and its rate of change per week.
 

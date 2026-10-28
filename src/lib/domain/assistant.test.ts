@@ -10,6 +10,8 @@ import type {
 } from '../api/types';
 import {
 	appliedEntityLine,
+	type ChatMessage,
+	chatHistory,
 	dayDelta,
 	entityHeading,
 	entityReach,
@@ -178,6 +180,35 @@ describe('past days', () => {
 		);
 		expect(summary.pastCount).toBe(1);
 		expect(summary.label).toBe('3 days would change, 1 already past.');
+	});
+});
+
+describe('chatHistory', () => {
+	function message(id: number, status: ChatMessage['status']): ChatMessage {
+		return {
+			id,
+			request: `request ${id}`,
+			preview: status === 'asking' ? null : preview([]),
+			status,
+		};
+	}
+
+	test('reports each settled turn with its reply, in order', () => {
+		const history = chatHistory([
+			message(1, 'applied'),
+			message(2, 'answered'),
+			message(3, 'discarded'),
+		]);
+		expect(history).toEqual([
+			{ request: 'request 1', reply: 'Done.', outcome: 'applied' },
+			{ request: 'request 2', reply: 'Done.', outcome: 'answered' },
+			{ request: 'request 3', reply: 'Done.', outcome: 'discarded' },
+		]);
+	});
+
+	test('a change still waiting is replaced by asking again, and one being asked is not yet a turn', () => {
+		const history = chatHistory([message(1, 'proposed'), message(2, 'asking')]);
+		expect(history).toEqual([{ request: 'request 1', reply: 'Done.', outcome: 'discarded' }]);
 	});
 });
 

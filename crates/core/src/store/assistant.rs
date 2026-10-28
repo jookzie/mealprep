@@ -1,6 +1,6 @@
 use crate::{
     Result,
-    domain::{AssistantContext, AssistantRecord, AssistantRecordDraft, Proposal},
+    domain::{AssistantContext, AssistantRecord, AssistantRecordDraft, ChatTurn, Proposal},
 };
 
 /// Whatever turns a plain-language request into typed operations.
@@ -19,12 +19,17 @@ use crate::{
 pub trait Assistant {
     /// Proposes the operations that would satisfy `request`, given `context`.
     ///
+    /// `history` is the conversation so far, oldest first, which the request may lean on
+    /// ("make it 30 g instead"). `context` is the plan as it is now, after whatever those
+    /// turns applied.
+    ///
     /// `key` is the credential the user supplied for whichever service the implementation
     /// talks to. `core` never looks at it; it reads it from [`AssistantStore`] and hands
     /// it over, so no implementation has to carry state the rules cannot see.
     async fn propose(
         &self,
         key: &str,
+        history: &[ChatTurn],
         request: &str,
         context: &AssistantContext,
     ) -> Result<Proposal>;

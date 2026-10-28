@@ -19,9 +19,9 @@ use mealprep_core::{
     Entity, Error, Result,
     domain::{
         AssistantContext, AssistantRecord, AssistantRecordDraft, CalendarDay, CatalogueEntry,
-        Category, CategoryDraft, CategoryScope, DateRange, DayPlan, DayPlanDraft, DayPlanItem,
-        EntityAction, EntityKind, EntrySource, ItemRef, MacroField, Macros, Meal, MealDraft,
-        MealPatch, Nutrients, Operation, Product, ProductDraft, ProductPatch, Proposal,
+        Category, CategoryDraft, CategoryScope, ChatTurn, DateRange, DayPlan, DayPlanDraft,
+        DayPlanItem, EntityAction, EntityKind, EntrySource, ItemRef, MacroField, Macros, Meal,
+        MealDraft, MealPatch, Nutrients, Operation, Product, ProductDraft, ProductPatch, Proposal,
         ResolvedDayPlan, ResolvedDayPlanItem, Serving, Targets, TargetsPatch, Unit,
     },
     service::Mealprep,
@@ -48,6 +48,7 @@ impl Assistant for CannedAssistant {
     async fn propose(
         &self,
         key: &str,
+        _history: &[ChatTurn],
         request: &str,
         context: &AssistantContext,
     ) -> Result<Proposal> {
@@ -685,7 +686,10 @@ async fn proposes_a_preview_without_writing_anything() {
     let (rules, fixture) = (&harness.rules, &harness.fixture);
 
     let request = "next 4 days I have 40 g less whey".to_owned();
-    let preview = rules.propose_assistant_edit(request.clone()).await.unwrap();
+    let preview = rules
+        .propose_assistant_edit(request.clone(), Vec::new())
+        .await
+        .unwrap();
 
     // The request is the rules' own, never the one the assistant answered with.
     assert_eq!(preview.proposal.request, request);
@@ -1104,7 +1108,7 @@ async fn an_update_reaches_every_field_and_null_clears_one() {
     let (rules, fixture) = (&harness.rules, &harness.fixture);
 
     let preview = rules
-        .propose_assistant_edit("acme whey, no price, 2200 kcal".to_owned())
+        .propose_assistant_edit("acme whey, no price, 2200 kcal".to_owned(), Vec::new())
         .await
         .unwrap();
     let lines: Vec<&str> = preview
@@ -1159,7 +1163,7 @@ async fn a_question_is_answered_in_prose_from_a_context_that_carries_the_nutrien
     let (rules, fixture) = (&harness.rules, &harness.fixture);
 
     let preview = rules
-        .propose_assistant_edit("how much calcium am I getting today".to_owned())
+        .propose_assistant_edit("how much calcium am I getting today".to_owned(), Vec::new())
         .await
         .unwrap();
     assert!(preview.entities.is_empty() && preview.days.is_empty());
@@ -1189,7 +1193,9 @@ async fn without_a_key_the_assistant_is_off() {
     let status = rules.assistant_key_status().await.unwrap();
     assert!(!status.present && status.hint.is_none());
     assert!(matches!(
-        rules.propose_assistant_edit("anything".to_owned()).await,
+        rules
+            .propose_assistant_edit("anything".to_owned(), Vec::new())
+            .await,
         Err(Error::Invalid { .. })
     ));
     assert!(harness.seen.lock().unwrap().is_empty(), "nothing was sent");
