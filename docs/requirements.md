@@ -138,7 +138,7 @@ Nutrients are shown as the four macros, with the full nutrient set behind an exp
 | Calendar | `/calendar` | `CL-1`–`CL-5`, `TG-2`, `TG-3` |
 | Targets | `/targets` | `TG-1`, `WT-6`, `DT-1`–`DT-4` — the macro targets, the weight trend beside them, and exporting or importing the data |
 | Weight | `/weight` | `WT-1`–`WT-7` — quick log, the graph, and the weigh-in history |
-| Assistant | `/assistant` | `AS-1`–`AS-15` — the request, the preview with Apply or Discard or the answer to a question, the API key, and what has been applied |
+| Assistant | `/assistant` | `AS-1`–`AS-16` — the chat: each request with its preview and Apply or Discard, or the answer to a question; the API key, and what has been applied |
 
 Creating and editing are screens rather than dialogs, because every write replaces the whole
 entity and so has to start from a fresh read. Dialogs carry what is genuinely one decision:
@@ -316,10 +316,12 @@ version.
 **Description and priority.** Correcting a plan by describing the change. Medium. New in
 this version.
 
-**Stimulus/response.** The user writes what changed — "next 4 days I have 40 g less whey".
-The application sends that and a compact view of the plan to the assistant, which answers
-with typed operations. The application checks every one against the stored data and shows
-what would change on each date. The user applies it, or discards it.
+**Stimulus/response.** The screen is a chat. The user writes what changed — "next 4 days I
+have 40 g less whey". The application sends that, the earlier messages of the chat and a
+compact view of the plan to the assistant, which answers with typed operations. The
+application checks every one against the stored data and shows what would change on each
+date, as the reply. The user applies it, discards it, or replies — "make it 30 g instead" —
+and gets a new proposal in its place.
 
 **Functional requirements.**
 - `AS-1` The system shall let the user describe a correction to their planning in plain language.
@@ -337,6 +339,7 @@ what would change on each date. The user applies it, or discards it.
 - `AS-13` A proposal may use what it creates — a meal made of a new product, a new plan put on a date — and applying it shall write those first and point everything after them at the identifiers the store assigns.
 - `AS-14` The system shall let the assistant propose syncing a product from Open Food Facts, by the code it was imported under or a barcode the user gives. The application, not the model, shall fetch the entry, both when previewing and again when applying; the product shall keep its name and price, keep any of the four macros the entry lacks, and be linked to the code it was synced from. The preview shall say what each figure changes from and to, and pass on the catalogue's own warnings.
 - `AS-15` The system shall let the user ask a question about their plan — such as how its micronutrients compare with the reference intakes — and shall show the assistant's answer with nothing to apply. The answer shall compare against the EU reference intakes for adults unless the user gives other figures, say which nutrients the products leave unknown, and give no diagnosis or supplement advice.
+- `AS-16` The system shall present the assistant as a chat: each request and its reply in order, with the earlier requests and replies of the chat sent with each new one so a request may refer back to them, and with what became of each proposal — applied or discarded — shown on it and told to the assistant. Only the latest proposal can be applied; sending another message discards one still waiting. The chat is held in memory only, can be started over, and checks each request against the stored data on its own words alone (`AS-3`, `AS-7`). The screen shall offer no canned requests.
 
 ### 4.13 Data export and import
 **Description and priority.** Moving all of the user's data in and out of the application as
@@ -378,7 +381,9 @@ comes back. None of the user's own data is sent.
 **The planning assistant (§4.12).** This is the one feature that sends the user's own data
 off the device. It is off until the user turns it on by supplying an API key.
 
-- *What is sent, per question asked:* the request the user typed, and a view of the plan
+- *What is sent, per message:* the request the user typed, the earlier requests of the chat
+  with the assistant's replies to them and whether each proposal was applied (at most the
+  last twenty, and only the words: no operations, no ids), and a view of the plan
   around today — the dates in the assistant's window with the labels and amounts on them and
   their nutrient totals, their day plans with what they hold, their meals with their
   servings, their products with brand, macros and further nutrients per 100 g or ml and

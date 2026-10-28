@@ -13,7 +13,8 @@ use std::{collections::HashMap, env, fs, process};
 use mealprep_core::{
     Entity, Error, Result,
     domain::{
-        AssistantContext, CatalogueEntry, Macros, MealDraft, ProductDraft, Proposal, Serving, Unit,
+        AssistantContext, CatalogueEntry, ChatTurn, Macros, MealDraft, ProductDraft, Proposal,
+        Serving, Unit,
     },
     service::Mealprep,
     store::{Assistant, Catalogue},
@@ -44,6 +45,7 @@ impl Assistant for NoAssistant {
     async fn propose(
         &self,
         _key: &str,
+        _history: &[ChatTurn],
         _request: &str,
         _context: &AssistantContext,
     ) -> Result<Proposal> {

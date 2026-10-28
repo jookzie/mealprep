@@ -1,15 +1,17 @@
-use mealprep_core::domain::{AssistantKeyStatus, AssistantRecord, Preview, Proposal};
+use mealprep_core::domain::{AssistantKeyStatus, AssistantRecord, ChatTurn, Preview, Proposal};
 use tauri::State;
 
 use crate::{result::Result, setup::AppState};
 
-/// Asks the assistant what the request means and returns the preview, writing nothing.
+/// Asks the assistant what the request means, in the conversation so far, and returns the
+/// preview, writing nothing.
 #[tauri::command]
 pub async fn propose_assistant_edit(
     state: State<'_, AppState>,
     request: String,
+    history: Vec<ChatTurn>,
 ) -> Result<Preview> {
-    let preview = state.propose_assistant_edit(request).await?;
+    let preview = state.propose_assistant_edit(request, history).await?;
     Ok(preview)
 }
 

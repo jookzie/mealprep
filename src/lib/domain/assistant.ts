@@ -2,12 +2,14 @@ import type {
 	AppliedChange,
 	AppliedEntityChange,
 	AssistantRecord,
+	ChatTurn,
 	DateRange,
 	EntityKind,
 	Macros,
 	Preview,
 	PreviewDay,
 	PreviewEntity,
+	TurnOutcome,
 } from '../api/types';
 import { deviation } from './macros';
 import { datesInRange, dayMonthLabel, type IsoDate } from './week';
@@ -105,6 +107,35 @@ export function summarisePreview(preview: Preview, today: IsoDate): PreviewSumma
 	const label = isEmpty ? 'Nothing would change.' : `${parts.join(' and ')} would change${past}.`;
 	const isAnswer = isEmpty && preview.proposal.rationale.trim() !== '';
 	return { entityCount, dayCount, detachCount, pastCount, isEmpty, isAnswer, dates, label };
+}
+
+/**
+ * Where one message of the conversation stands: waiting on the assistant, a change
+ * waiting on the user, or settled.
+ */
+export type MessageStatus = 'asking' | 'proposed' | 'answered' | 'applied' | 'discarded';
+
+export type ChatMessage = {
+	id: number;
+	request: string;
+	/** Absent while the assistant is still thinking. */
+	preview: Preview | null;
+	status: MessageStatus;
+};
+
+/**
+ * The earlier turns the next request continues, in order.
+ *
+ * Only the words go: what an applied change did is already in the plan the request
+ * carries. A change still waiting is reported as discarded, because asking again
+ * replaces it.
+ */
+export function chatHistory(messages: readonly ChatMessage[]): ChatTurn[] {
+	return messages.flatMap((message) => {
+		if (message.status === 'asking' || !message.preview) return [];
+		const outcome: TurnOutcome = message.status === 'proposed' ? 'discarded' : message.status;
+		return [{ request: message.request, reply: message.preview.proposal.rationale, outcome }];
+	});
 }
 
 /**

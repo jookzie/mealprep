@@ -9,6 +9,7 @@ import type {
 	Category,
 	CategoryDraft,
 	CategoryScope,
+	ChatTurn,
 	DayPlan,
 	DayPlanDraft,
 	Macros,
@@ -94,9 +95,12 @@ export const setWeightEntry = (date: string, kilograms: number) =>
 	call<WeightEntry>('set_weight_entry', { date, kilograms });
 export const deleteWeightEntry = (date: string) => call<void>('delete_weight_entry', { date });
 
-/** Asks the assistant what the request means. It writes nothing; the preview is read-only. */
-export const proposeAssistantEdit = (request: string) =>
-	call<Preview>('propose_assistant_edit', { request });
+/**
+ * Asks the assistant what the request means, after the earlier turns of the conversation.
+ * It writes nothing; the preview is read-only.
+ */
+export const proposeAssistantEdit = (request: string, history: ChatTurn[]) =>
+	call<Preview>('propose_assistant_edit', { request, history });
 /** Applies the operations the user confirmed, which are re-checked before anything is written. */
 export const applyAssistantEdit = (proposal: Proposal) =>
 	call<AssistantRecord>('apply_assistant_edit', { proposal });

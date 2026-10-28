@@ -523,6 +523,32 @@ pub struct ContextCategory {
     pub scope: CategoryScope,
 }
 
+/// One earlier exchange of the conversation a request continues.
+///
+/// It comes back over the bridge with the next request, so the model can read "make it
+/// 30 g instead" against what it said last. Only the words travel: what an earlier change
+/// did is already in the plan the request carries, and the rules trust nothing in here.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatTurn {
+    pub request: String,
+    /// What the assistant said, which for a question was the whole answer.
+    pub reply: String,
+    pub outcome: TurnOutcome,
+}
+
+/// What became of an earlier reply.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TurnOutcome {
+    /// It proposed nothing: an answer to a question, or a reason it could not.
+    Answered,
+    /// It proposed a change and the user applied it.
+    Applied,
+    /// It proposed a change and the user discarded it, or asked something else instead.
+    Discarded,
+}
+
 /// What the assistant answered: the operations it proposes, and why.
 ///
 /// Nothing in it has been checked yet. It is the input to the rules, not a result.

@@ -17,9 +17,9 @@ use std::{env, fs, path::PathBuf, process};
 use mealprep_core::{
     Entity, Error, Result,
     domain::{
-        AssistantContext, CatalogueEntry, CategoryDraft, CategoryScope, DateRange, DayPlanDraft,
-        DayPlanItem, Macros, MealDraft, Nutrients, Operation, ProductDraft, ProductPatch, Proposal,
-        Serving, Unit, parse_iso_date,
+        AssistantContext, CatalogueEntry, CategoryDraft, CategoryScope, ChatTurn, DateRange,
+        DayPlanDraft, DayPlanItem, Macros, MealDraft, Nutrients, Operation, ProductDraft,
+        ProductPatch, Proposal, Serving, Unit, parse_iso_date,
     },
     service::Mealprep,
     store::{Assistant, Catalogue},
@@ -55,6 +55,7 @@ impl Assistant for NoAssistant {
     async fn propose(
         &self,
         _key: &str,
+        _history: &[ChatTurn],
         _request: &str,
         _context: &AssistantContext,
     ) -> Result<Proposal> {

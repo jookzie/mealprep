@@ -5,9 +5,10 @@ use std::sync::{Arc, Mutex};
 use mealprep_core::{
     Entity, Error, Result,
     domain::{
-        AssistantContext, CatalogueEntry, CategoryDraft, CategoryScope, DateRange, DayPlanDraft,
-        DayPlanItem, EntrySource, Macros, MealDraft, Nutrients, Operation, ProductDraft, Proposal,
-        ResolvedDayPlan, ResolvedDayPlanItem, Serving, Unit, parse_iso_date,
+        AssistantContext, CatalogueEntry, CategoryDraft, CategoryScope, ChatTurn, DateRange,
+        DayPlanDraft, DayPlanItem, EntrySource, Macros, MealDraft, Nutrients, Operation,
+        ProductDraft, Proposal, ResolvedDayPlan, ResolvedDayPlanItem, Serving, Unit,
+        parse_iso_date,
     },
     service::Mealprep,
     store::{Assistant, Catalogue},
@@ -63,6 +64,7 @@ impl Assistant for ScriptedAssistant {
     async fn propose(
         &self,
         _key: &str,
+        _history: &[ChatTurn],
         request: &str,
         _context: &AssistantContext,
     ) -> Result<Proposal> {
@@ -655,7 +657,7 @@ async fn an_assistant_edit_detaches_the_dates_it_names_and_leaves_the_past_alone
     }]);
 
     let preview = mealprep
-        .propose_assistant_edit("next 2 days I have 40 g less whey".to_owned())
+        .propose_assistant_edit("next 2 days I have 40 g less whey".to_owned(), Vec::new())
         .await
         .unwrap();
     assert_eq!(preview.days.len(), 2);
@@ -744,7 +746,7 @@ async fn an_assistant_edit_detaches_the_dates_it_names_and_leaves_the_past_alone
         },
     }]);
     let preview = mealprep
-        .propose_assistant_edit("make it another 10 g today".to_owned())
+        .propose_assistant_edit("make it another 10 g today".to_owned(), Vec::new())
         .await
         .unwrap();
     assert!(
@@ -797,14 +799,14 @@ async fn the_assistant_refuses_a_past_date_unless_the_request_names_one() {
 
     assert!(matches!(
         mealprep
-            .propose_assistant_edit("40 g less whey".to_owned())
+            .propose_assistant_edit("40 g less whey".to_owned(), Vec::new())
             .await,
         Err(Error::Invalid { .. })
     ));
 
     // The same operation, from a request that says the past date out loud, goes through.
     let preview = mealprep
-        .propose_assistant_edit("yesterday I had 40 g less whey".to_owned())
+        .propose_assistant_edit("yesterday I had 40 g less whey".to_owned(), Vec::new())
         .await
         .unwrap();
     mealprep
@@ -831,7 +833,7 @@ async fn the_assistant_is_off_until_a_key_is_pasted_in() {
     assert!(!status.present && status.hint.is_none());
     assert!(matches!(
         mealprep
-            .propose_assistant_edit("anything at all".to_owned())
+            .propose_assistant_edit("anything at all".to_owned(), Vec::new())
             .await,
         Err(Error::Invalid { .. })
     ));

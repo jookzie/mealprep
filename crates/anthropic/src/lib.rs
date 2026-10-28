@@ -1,7 +1,7 @@
 //! Claude as the Mealprep planning assistant.
 //!
-//! One request, one answer: the user's correction or question and a view of their plan go
-//! to the Messages API, and the reply comes back as tool calls — one per edit — plus some
+//! One request, one answer: the user's correction or question, the conversation it
+//! continues and a view of their plan go to the Messages API, and the reply comes back as tool calls — one per edit — plus some
 //! prose. The tool calls become [`Operation`]s and the prose becomes the rationale, which
 //! for a question is the whole answer; nothing here writes anything, and nothing here
 //! decides whether an operation is allowed. `mealprep-core` checks all of that against
@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use mealprep_core::{
     Entity, Error, Result,
-    domain::{AssistantContext, Operation, Proposal},
+    domain::{AssistantContext, ChatTurn, Operation, Proposal, TurnOutcome},
     store::Assistant,
 };
 use reqwest::{Client, StatusCode, header};
@@ -105,7 +105,13 @@ confirm or discard, so make it one or two plain sentences saying what you did. F
 question it is the whole answer, so make it as long as the question needs and no longer. \
 Either way use everyday words: no ids, no tool names. The app checks every operation \
 against the real data and applies nothing without that confirmation, so propose what the \
-request actually says rather than hedging.";
+request actually says rather than hedging.
+
+The requests form a conversation, and a request may lean on an earlier one (\"make it 30 g \
+instead\", \"and the day after too\"). Only the latest message carries the plan, and it is \
+the plan as it is now: a change the user applied is already in it, and one they discarded \
+never happened. A note in brackets at the start of a message says which it was. Act on the \
+latest request only, and never propose again a change that was applied.";
 
 /// Reads proposals from the Anthropic Messages API.
 #[derive(Clone, Debug)]
@@ -139,6 +145,7 @@ impl Assistant for Anthropic {
     async fn propose(
         &self,
         key: &str,
+        history: &[ChatTurn],
         request: &str,
         context: &AssistantContext,
     ) -> Result<Proposal> {
@@ -149,7 +156,7 @@ impl Assistant for Anthropic {
             .header("x-api-key", key)
             .header("anthropic-version", API_VERSION)
             .header(header::ACCEPT, "application/json")
-            .json(&body(request, context)?)
+            .json(&body(history, request, context)?)
             .send()
             .await
             .map_err(unavailable)?;
@@ -169,9 +176,9 @@ impl Assistant for Anthropic {
     }
 }
 
-/// The request body: the system prompt, one tool per kind of operation, and the user's
-/// correction with the context it is about.
-fn body(request: &str, context: &AssistantContext) -> Result<Value> {
+/// The request body: the system prompt, one tool per kind of operation, the conversation
+/// so far, and the user's correction with the context it is about.
+fn body(history: &[ChatTurn], request: &str, context: &AssistantContext) -> Result<Value> {
     let context = serde_json::to_string(context).map_err(|source| Error::Internal {
         reason: format!("cannot describe the plan to the assistant: {source}"),
     })?;
@@ -187,11 +194,45 @@ fn body(request: &str, context: &AssistantContext) -> Result<Value> {
         // Auto rather than forced: "none of these tools can do that" is a useful answer,
         // and a forced call would have to invent something.
         "tool_choice": { "type": "auto" },
-        "messages": [{
-            "role": "user",
-            "content": format!("<plan>\n{context}\n</plan>\n\n{request}"),
-        }],
+        "messages": messages(history, &format!("<plan>\n{context}\n</plan>\n\n{request}")),
     }))
+}
+
+/// The conversation as alternating turns, ending with `latest`.
+///
+/// Earlier turns are words only: the operations they proposed are not replayed, because
+/// what was applied is in the plan and what was not never happened. What became of a
+/// reply opens the message after it, where it reads as news rather than as something the
+/// model said.
+fn messages(history: &[ChatTurn], latest: &str) -> Vec<Value> {
+    let mut messages = Vec::with_capacity(history.len() * 2 + 1);
+    let mut note = None;
+    for turn in history {
+        messages.push(json!({ "role": "user", "content": noted(note, &turn.request) }));
+        // A change can come with no prose, and the API refuses an empty turn.
+        let reply = if turn.reply.is_empty() {
+            "(I proposed a change.)"
+        } else {
+            turn.reply.as_str()
+        };
+        messages.push(json!({ "role": "assistant", "content": reply }));
+        note = match turn.outcome {
+            TurnOutcome::Answered => None,
+            TurnOutcome::Applied => Some("[The user applied that change.]"),
+            TurnOutcome::Discarded => {
+                Some("[The user discarded that change; nothing was applied.]")
+            }
+        };
+    }
+    messages.push(json!({ "role": "user", "content": noted(note, latest) }));
+    messages
+}
+
+fn noted(note: Option<&str>, text: &str) -> String {
+    match note {
+        Some(note) => format!("{note}\n\n{text}"),
+        None => text.to_owned(),
+    }
 }
 
 /// Reads the answer: the tool calls are the operations, the prose is the rationale.
@@ -368,7 +409,7 @@ mod tests {
 
     #[test]
     fn the_request_carries_the_model_the_tools_and_the_plan() {
-        let body = body("next 4 days I have 40 g less whey", &context()).unwrap();
+        let body = body(&[], "next 4 days I have 40 g less whey", &context()).unwrap();
 
         assert_eq!(body["model"], MODEL);
         assert_eq!(body["thinking"]["type"], "adaptive");
@@ -386,6 +427,45 @@ mod tests {
         assert!(content.contains("\"calcium\":0.5"), "{content}");
         // The key is a header, never part of the body.
         assert!(!body.to_string().contains("x-api-key"));
+    }
+
+    #[test]
+    fn earlier_turns_go_first_and_only_the_latest_carries_the_plan() {
+        let history = [
+            ChatTurn {
+                request: "next 4 days I have 40 g less whey".to_owned(),
+                reply: "Took 40 g off the whey on each of the next four days.".to_owned(),
+                outcome: TurnOutcome::Discarded,
+            },
+            ChatTurn {
+                request: "how much calcium is that?".to_owned(),
+                reply: "About 100 mg a day.".to_owned(),
+                outcome: TurnOutcome::Answered,
+            },
+        ];
+        let body = body(&history, "make it 30 g instead", &context()).unwrap();
+        let messages = body["messages"].as_array().unwrap();
+
+        let roles: Vec<&str> = messages
+            .iter()
+            .map(|message| message["role"].as_str().unwrap())
+            .collect();
+        assert_eq!(roles, ["user", "assistant", "user", "assistant", "user"]);
+        assert_eq!(messages[0]["content"], "next 4 days I have 40 g less whey");
+
+        // What became of a change opens the message after it.
+        let after_discard = messages[2]["content"].as_str().unwrap();
+        assert!(
+            after_discard.starts_with("[The user discarded"),
+            "{after_discard}"
+        );
+        assert!(after_discard.ends_with("how much calcium is that?"));
+
+        // An answer leaves nothing to report, and the plan goes once, with the latest.
+        let latest = messages[4]["content"].as_str().unwrap();
+        assert!(latest.starts_with("<plan>"), "{latest}");
+        assert!(latest.ends_with("make it 30 g instead"));
+        assert_eq!(body.to_string().matches("<plan>").count(), 1);
     }
 
     #[test]

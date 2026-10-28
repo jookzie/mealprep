@@ -32,11 +32,11 @@ use crate::{
     Entity, Error, Result,
     domain::{
         AppliedChange, AppliedEntityChange, AssistantContext, AssistantKeyStatus, AssistantRecord,
-        AssistantRecordDraft, CatalogueEntry, Category, CategoryScope, ContextCategory, ContextDay,
-        ContextItem, ContextMeal, ContextPlan, ContextProduct, DayPlan, DayPlanDraft, DayPlanItem,
-        EntityAction, EntityKind, ItemRef, MacroField, Macros, Meal, MealDraft, Nutrients,
-        Operation, Preview, PreviewDay, PreviewEntity, Product, ProductDraft, Proposal, Serving,
-        format_iso_date,
+        AssistantRecordDraft, CatalogueEntry, Category, CategoryScope, ChatTurn, ContextCategory,
+        ContextDay, ContextItem, ContextMeal, ContextPlan, ContextProduct, DayPlan, DayPlanDraft,
+        DayPlanItem, EntityAction, EntityKind, ItemRef, MacroField, Macros, Meal, MealDraft,
+        Nutrients, Operation, Preview, PreviewDay, PreviewEntity, Product, ProductDraft, Proposal,
+        Serving, format_iso_date,
     },
     store::{
         Assistant, AssistantStore, CalendarStore, Catalogue, CategoryStore, DayPlanStore,
@@ -54,6 +54,10 @@ const DAYS_AHEAD: i64 = 35;
 /// The most dates one operation may name. A correction spans days, not seasons, and a
 /// bound keeps a misread "every Monday" from rewriting a year.
 const MAX_DATES: usize = 35;
+
+/// How many earlier turns of a conversation go to the assistant with a request. Enough to
+/// follow a correction back to what it corrects; older turns are dropped, oldest first.
+const MAX_TURNS: usize = 20;
 
 /// How many applied requests the log hands back.
 const LOG_LIMIT: u32 = 50;
@@ -544,16 +548,25 @@ where
     /// Asks the assistant what the request means and checks the answer against the real
     /// data, writing nothing.
     ///
+    /// `history` is the conversation the request continues, oldest first. It is read by
+    /// the assistant and by nothing else: the request alone is what gets checked, so a
+    /// past date still has to be asked for in it.
+    ///
     /// The preview it returns is what the user confirms; the operations inside it are
     /// what [`Self::apply_assistant_edit`] takes back.
-    pub async fn propose_assistant_edit(&self, request: String) -> Result<Preview> {
+    pub async fn propose_assistant_edit(
+        &self,
+        request: String,
+        history: Vec<ChatTurn>,
+    ) -> Result<Preview> {
         let request = validate::assistant_request(request)?;
+        let history = chat_history(history)?;
         let key = self.assistant_key().await?;
         let world = self.load_world().await?;
 
         let answer = self
             .assistant
-            .propose(&key, &request, &world.context())
+            .propose(&key, &history, &request, &world.context())
             .await?;
         // The request is ours, not the assistant's: a proposal that reworded it would put
         // a sentence the user never typed above the confirmation and into the log.
@@ -871,6 +884,23 @@ fn key_status(key: Option<&str>) -> AssistantKeyStatus {
         present: true,
         hint: Some(hint),
     }
+}
+
+/// Checks the earlier turns the way a request is checked, keeping the latest
+/// [`MAX_TURNS`] of them.
+fn chat_history(history: Vec<ChatTurn>) -> Result<Vec<ChatTurn>> {
+    let skip = history.len().saturating_sub(MAX_TURNS);
+    history
+        .into_iter()
+        .skip(skip)
+        .map(|turn| {
+            Ok(ChatTurn {
+                request: validate::assistant_request(turn.request)?,
+                reply: turn.reply.trim().to_owned(),
+                outcome: turn.outcome,
+            })
+        })
+        .collect()
 }
 
 /// Checks every operation against the data and says what each entity and date it names
@@ -1862,7 +1892,9 @@ mod tests {
     use time::macros::date;
 
     use super::*;
-    use crate::domain::{DateRange, DayPlanPatch, MealPatch, Nutrients, ProductPatch, Unit};
+    use crate::domain::{
+        DateRange, DayPlanPatch, MealPatch, Nutrients, ProductPatch, TurnOutcome, Unit,
+    };
 
     const TODAY: Date = date!(2026 - 10 - 20);
 
@@ -2633,5 +2665,24 @@ mod tests {
         let status = key_status(Some("sk-ant-api03-secret-tail"));
         assert!(status.present);
         assert_eq!(status.hint.as_deref(), Some("tail"));
+    }
+
+    #[test]
+    fn a_conversation_keeps_its_latest_turns_and_checks_each_request() {
+        let turn = |request: &str| ChatTurn {
+            request: request.to_owned(),
+            reply: " Done. ".to_owned(),
+            outcome: TurnOutcome::Answered,
+        };
+
+        let long: Vec<ChatTurn> = (0..MAX_TURNS + 3)
+            .map(|index| turn(&format!("request {index}")))
+            .collect();
+        let kept = chat_history(long).unwrap();
+        assert_eq!(kept.len(), MAX_TURNS);
+        assert_eq!(kept[0].request, "request 3", "the oldest go first");
+        assert_eq!(kept[0].reply, "Done.");
+
+        assert!(chat_history(vec![turn("  ")]).is_err());
     }
 }

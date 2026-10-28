@@ -248,6 +248,16 @@ export type Proposal = {
 	operations: Operation[];
 };
 
+/** What became of an earlier reply: nothing to apply, applied, or discarded. */
+export type TurnOutcome = 'answered' | 'applied' | 'discarded';
+
+/** One earlier exchange of the conversation a request continues. Only the words travel. */
+export type ChatTurn = {
+	request: string;
+	reply: string;
+	outcome: TurnOutcome;
+};
+
 /** What one date would become. */
 export type PreviewDay = {
 	date: string;
