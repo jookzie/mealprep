@@ -58,6 +58,7 @@ impl Assistant for NoAssistant {
         _history: &[ChatTurn],
         _request: &str,
         _context: &AssistantContext,
+        _check: impl Fn(&[Operation]) -> Result<()> + Send + Sync,
     ) -> Result<Proposal> {
         Err(internal("the seed proposes nothing".to_owned()))
     }

@@ -163,6 +163,26 @@ Each entry records what happens today, what is deferred, and what would trigger 
   existing day change costs a variant on `Operation`, an arm of the resolver and a tool
   schema; the preview, the confirmation and the writes are untouched.
 
+## Showing the assistant's answer as it arrives
+- **Today**: each attempt is one non-streaming request, and the chat shows a waiting state
+  until the final answer is checked. Thinking at `medium` effort and the cached tools and
+  system prompt keep that short, but a refused answer adds a whole attempt.
+- **Deferred**: streaming the reply, and saying in the chat when an answer was refused and
+  is being put right, so the wait reads as progress. It needs an event channel from
+  `src-tauri` to the screen, which no command has today.
+- **Trigger**: waits that still feel long at `medium` effort, or retries common enough that
+  the user notices them.
+
+## Adding to a date that has no plan
+- **Today**: add-item and adjust-product-amount refuse a date with no plan, so "put this
+  meal on next week" over unplanned dates needs a day plan created and assigned in the same
+  answer. The prompt says so, and a refusal goes back to the model with the reason.
+- **Deferred**: an add-item that gives an unplanned date a plan of its own holding just
+  that item. It needs a label for a plan the user never named, and a decision about whether
+  that plan is offered for other dates.
+- **Trigger**: the model still getting this wrong after the retry, or the user asking for
+  single items on empty days often.
+
 ## A transaction across the store traits
 - **Today**: `apply_assistant_edit` checks every operation against the real data before it
   writes anything, so a proposal that no longer fits fails having touched nothing. The writes

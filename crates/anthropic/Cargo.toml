@@ -13,6 +13,8 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+# A local stand-in for the Messages API, to drive the retries.
+tokio = { workspace = true, features = ["io-util", "net"] }
 uuid.workspace = true
 
 [lints]

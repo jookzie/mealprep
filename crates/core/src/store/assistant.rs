@@ -1,6 +1,8 @@
 use crate::{
     Result,
-    domain::{AssistantContext, AssistantRecord, AssistantRecordDraft, ChatTurn, Proposal},
+    domain::{
+        AssistantContext, AssistantRecord, AssistantRecordDraft, ChatTurn, Operation, Proposal,
+    },
 };
 
 /// Whatever turns a plain-language request into typed operations.
@@ -26,12 +28,19 @@ pub trait Assistant {
     /// `key` is the credential the user supplied for whichever service the implementation
     /// talks to. `core` never looks at it; it reads it from [`AssistantStore`] and hands
     /// it over, so no implementation has to carry state the rules cannot see.
+    ///
+    /// `check` runs the rules over a set of operations and says why they would be refused.
+    /// An implementation may call it on an answer and, when it fails, ask again with that
+    /// reason, a bounded number of times: a request that takes several edits fails as a
+    /// whole on any one of them, and the reason is usually enough to put that one right.
+    /// Passing it is no promise — the rules check whatever comes back from scratch.
     async fn propose(
         &self,
         key: &str,
         history: &[ChatTurn],
         request: &str,
         context: &AssistantContext,
+        check: impl Fn(&[Operation]) -> Result<()> + Send + Sync,
     ) -> Result<Proposal>;
 }
 
