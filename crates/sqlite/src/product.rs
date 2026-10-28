@@ -21,6 +21,8 @@ const LIST_BY_IDS: &str = "SELECT * FROM products \
 const UPDATE: &str = "UPDATE products \
     SET name = ?, unit = ?, energy_kcal = ?, fat_g = ?, protein_g = ?, carbohydrates_g = ?, nutrients = ?, cost = ?, brand = ?, updated_at = ? \
     WHERE id = ? AND deleted_at IS NULL RETURNING *";
+const SET_SOURCE: &str = "UPDATE products SET source_code = ?, updated_at = ? \
+    WHERE id = ? AND deleted_at IS NULL";
 const DELETE: &str =
     "UPDATE products SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL";
 
@@ -106,6 +108,20 @@ impl ProductStore for SqliteStore {
             return Err(row::not_found(Entity::Product, id));
         };
         product.into_product()
+    }
+
+    async fn set_product_source(&self, id: Uuid, source_code: &str) -> Result<()> {
+        let updated = sqlx::query(SET_SOURCE)
+            .bind(source_code)
+            .bind(row::now())
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(internal)?;
+        if updated.rows_affected() == 0 {
+            return Err(row::not_found(Entity::Product, id));
+        }
+        Ok(())
     }
 
     async fn delete_product(&self, id: Uuid) -> Result<()> {

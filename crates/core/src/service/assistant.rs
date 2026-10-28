@@ -14,8 +14,11 @@
 //!
 //! Entity edits are checked first, against a copy of the data they then change, so the
 //! day edits of the same proposal can name what they create and see what they change.
+//!
+//! The one edit that needs the outside world is a sync from the catalogue. Its entry is
+//! fetched before checking starts, so checking stays a function of the data alone.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, hash_map::Entry};
 
 use time::{Date, Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -29,14 +32,15 @@ use crate::{
     Entity, Error, Result,
     domain::{
         AppliedChange, AppliedEntityChange, AssistantContext, AssistantKeyStatus, AssistantRecord,
-        AssistantRecordDraft, ContextDay, ContextItem, ContextMeal, ContextPlan, ContextProduct,
-        DayPlan, DayPlanDraft, DayPlanItem, EntityAction, EntityKind, ItemRef, Macros, Meal,
-        MealDraft, Operation, Preview, PreviewDay, PreviewEntity, Product, ProductDraft, Proposal,
-        Serving, format_iso_date,
+        AssistantRecordDraft, CatalogueEntry, Category, CategoryScope, ContextCategory, ContextDay,
+        ContextItem, ContextMeal, ContextPlan, ContextProduct, DayPlan, DayPlanDraft, DayPlanItem,
+        EntityAction, EntityKind, ItemRef, MacroField, Macros, Meal, MealDraft, Nutrients,
+        Operation, Preview, PreviewDay, PreviewEntity, Product, ProductDraft, Proposal, Serving,
+        format_iso_date,
     },
     store::{
-        Assistant, AssistantStore, CalendarStore, DayPlanStore, MealStore, ProductStore,
-        TargetsStore,
+        Assistant, AssistantStore, CalendarStore, Catalogue, CategoryStore, DayPlanStore,
+        MealStore, ProductStore, TargetsStore,
     },
 };
 
@@ -119,6 +123,9 @@ pub struct EntityChange {
     pub draft: EntityDraft,
     /// What changes, in plain words.
     pub changes: Vec<String>,
+    /// The catalogue code a product is synced from from now on, when a sync names one it
+    /// was not imported under.
+    pub link: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -126,6 +133,7 @@ pub enum EntityDraft {
     Product(ProductDraft),
     Meal(MealDraft),
     DayPlan(DayPlanDraft),
+    Targets(Macros),
 }
 
 impl EntityDraft {
@@ -134,6 +142,7 @@ impl EntityDraft {
             Self::Product(_) => EntityKind::Product,
             Self::Meal(_) => EntityKind::Meal,
             Self::DayPlan(_) => EntityKind::DayPlan,
+            Self::Targets(_) => EntityKind::Targets,
         }
     }
 
@@ -142,6 +151,7 @@ impl EntityDraft {
             Self::Product(draft) => &draft.name,
             Self::Meal(draft) => &draft.label,
             Self::DayPlan(draft) => &draft.label,
+            Self::Targets(_) => "Daily targets",
         }
     }
 }
@@ -195,6 +205,10 @@ struct World {
     product_order: Vec<Uuid>,
     meals: MealIndex,
     products: ProductIndex,
+    /// The categories of both scopes, in list order.
+    categories: Vec<Category>,
+    /// The catalogue entries the proposal's syncs name, by code, fetched before checking.
+    catalogue: HashMap<String, CatalogueEntry>,
 }
 
 impl World {
@@ -231,6 +245,37 @@ impl World {
             .sum()
     }
 
+    /// What the given order adds up to beyond the macros, by the rules of
+    /// [`Self::macros_of`]: a deleted meal or product adds nothing.
+    fn nutrients_of(&self, items: &[DayPlanItem]) -> Nutrients {
+        let mut totals = Nutrients::new();
+        for item in items {
+            match item {
+                DayPlanItem::Meal { meal_id } => {
+                    let servings = self
+                        .meals
+                        .get(meal_id)
+                        .map_or(&[][..], |meal| &meal.entity.servings);
+                    for serving in servings {
+                        derive::add_serving_nutrients(serving, &self.products, &mut totals);
+                    }
+                }
+                DayPlanItem::Product { product_id, amount } => derive::add_serving_nutrients(
+                    &Serving {
+                        product_id: *product_id,
+                        amount: *amount,
+                    },
+                    &self.products,
+                    &mut totals,
+                ),
+            }
+        }
+        totals
+            .into_iter()
+            .map(|(key, value)| (key, significant(value)))
+            .collect()
+    }
+
     /// What the context tells the model, which is everything it is allowed to name.
     fn context(&self) -> AssistantContext {
         let (from, to) = self.window();
@@ -245,6 +290,9 @@ impl World {
                         .map(|plan| self.context_items(&plan.items))
                         .unwrap_or_default(),
                     macros: plan.map_or(Macros::ZERO, |plan| self.macros_of(&plan.items)),
+                    nutrients: plan
+                        .map(|plan| self.nutrients_of(&plan.items))
+                        .unwrap_or_default(),
                 }
             })
             .collect();
@@ -260,6 +308,7 @@ impl World {
                 .map(|plan| ContextPlan {
                     id: plan.id,
                     label: plan.label.clone(),
+                    category_id: plan.category_id,
                     items: plan.items.clone(),
                 })
                 .collect(),
@@ -270,6 +319,7 @@ impl World {
                 .map(|meal| ContextMeal {
                     id: meal.entity.id,
                     label: meal.entity.label.clone(),
+                    category_id: meal.entity.category_id,
                     servings: meal.entity.servings.clone(),
                 })
                 .collect(),
@@ -281,7 +331,19 @@ impl World {
                     id: product.id,
                     name: product.name.clone(),
                     unit: product.unit,
+                    brand: product.brand.clone(),
                     macros: product.macros,
+                    nutrients: product.nutrients.clone(),
+                    synced: product.source_code.is_some(),
+                })
+                .collect(),
+            categories: self
+                .categories
+                .iter()
+                .map(|category| ContextCategory {
+                    id: category.id,
+                    name: category.name.clone(),
+                    scope: category.scope,
                 })
                 .collect(),
         }
@@ -307,6 +369,8 @@ impl World {
                         plan.items.iter().any(|item| self.item_uses(item, kind, id))
                     })
                 }
+                // Every day is measured against them, so "how many use them" says nothing.
+                EntityKind::Targets => false,
             })
             .count()
     }
@@ -423,13 +487,58 @@ impl World {
             .map(|meal| meal.entity.label.as_str())
             .ok_or_else(|| invalid(format!("meal {id} does not exist")))
     }
+
+    /// The name of the given category, which has to exist and group what is filed in it.
+    fn category_name(&self, id: Uuid, scope: CategoryScope) -> Result<&str> {
+        match self.categories.iter().find(|category| category.id == id) {
+            Some(category) if category.scope == scope => Ok(&category.name),
+            Some(category) => Err(invalid(format!(
+                "category {} groups {}, not {}",
+                category.name,
+                category.scope.grouped(),
+                scope.grouped()
+            ))),
+            None => Err(invalid(format!("category {id} does not exist"))),
+        }
+    }
+
+    /// Files a meal or plan under the category an edit names, or takes it out of the one
+    /// it is in, and says so. Nothing happens when the edit names none or the same one.
+    fn recategorise(
+        &self,
+        category_id: &mut Option<Uuid>,
+        wanted: Option<Option<Uuid>>,
+        scope: CategoryScope,
+        lines: &mut Vec<String>,
+    ) -> Result<()> {
+        let Some(wanted) = wanted.filter(|wanted| wanted != category_id) else {
+            return Ok(());
+        };
+        let line = match wanted {
+            Some(id) => format!("Filed under {}", self.category_name(id, scope)?),
+            None => match category_id.and_then(|id| self.category_name(id, scope).ok()) {
+                Some(name) => format!("Taken out of {name}"),
+                None => "Taken out of its category".to_owned(),
+            },
+        };
+        lines.push(line);
+        *category_id = wanted;
+        Ok(())
+    }
 }
 
 // the rules
 
 impl<S, C, A> Mealprep<S, C, A>
 where
-    S: AssistantStore + CalendarStore + DayPlanStore + MealStore + ProductStore + TargetsStore,
+    S: AssistantStore
+        + CalendarStore
+        + CategoryStore
+        + DayPlanStore
+        + MealStore
+        + ProductStore
+        + TargetsStore,
+    C: Catalogue,
     A: Assistant,
 {
     /// Asks the assistant what the request means and checks the answer against the real
@@ -454,6 +563,11 @@ where
             operations: answer.operations,
         };
 
+        // A question is answered in the prose and proposes nothing, which resolves to an
+        // empty preview rather than a failure.
+        let mut world = world;
+        self.fetch_catalogue(&mut world, &proposal.operations)
+            .await?;
         let resolved = resolve(&world, &proposal.request, &proposal.operations)?;
         Ok(preview(&world, proposal, &resolved))
     }
@@ -461,7 +575,14 @@ where
 
 impl<S, C, A> Mealprep<S, C, A>
 where
-    S: AssistantStore + CalendarStore + DayPlanStore + MealStore + ProductStore + TargetsStore,
+    S: AssistantStore
+        + CalendarStore
+        + CategoryStore
+        + DayPlanStore
+        + MealStore
+        + ProductStore
+        + TargetsStore,
+    C: Catalogue,
 {
     /// Applies the operations the user confirmed and records what it did.
     ///
@@ -470,7 +591,11 @@ where
     /// without having touched a row.
     pub async fn apply_assistant_edit(&self, proposal: Proposal) -> Result<AssistantRecord> {
         let request = validate::assistant_request(proposal.request)?;
-        let world = self.load_world().await?;
+        let mut world = self.load_world().await?;
+        // Fetched again rather than taken from the preview: the confirmation comes back
+        // over the bridge, and what is written has to be what the catalogue says now.
+        self.fetch_catalogue(&mut world, &proposal.operations)
+            .await?;
         let resolved = resolve(&world, &request, &proposal.operations)?;
         if resolved.entities.is_empty() && resolved.days.is_empty() {
             return Err(invalid("there is nothing to apply".to_owned()));
@@ -511,7 +636,13 @@ where
             EntityDraft::Product(draft) if create => {
                 self.store.create_product(draft, None).await?.id
             }
-            EntityDraft::Product(draft) => self.store.update_product(change.id, draft).await?.id,
+            EntityDraft::Product(draft) => {
+                let id = self.store.update_product(change.id, draft).await?.id;
+                if let Some(code) = &change.link {
+                    self.store.set_product_source(id, code).await?;
+                }
+                id
+            }
             EntityDraft::Meal(draft) => {
                 let draft = MealDraft {
                     servings: draft
@@ -540,6 +671,10 @@ where
                 } else {
                     self.store.update_day_plan(change.id, &draft).await?.id
                 }
+            }
+            EntityDraft::Targets(macros) => {
+                self.store.set_targets(*macros).await?;
+                Uuid::nil()
             }
         };
         if create {
@@ -629,6 +764,9 @@ where
         let products = self.store.list_products().await?;
         let product_order = products.iter().map(|product| product.id).collect();
 
+        let mut categories = self.store.list_categories(CategoryScope::Meal).await?;
+        categories.extend(self.store.list_categories(CategoryScope::DayPlan).await?);
+
         let products = derive::index_products(products);
         let meals: MealIndex = meals
             .into_iter()
@@ -652,7 +790,33 @@ where
             product_order,
             meals,
             products,
+            categories,
+            catalogue: HashMap::new(),
         })
+    }
+
+    /// Fetches the catalogue entry each sync of the proposal names, so checking it needs
+    /// nothing from outside. A sync with no code to fetch is left for checking to refuse.
+    async fn fetch_catalogue(&self, world: &mut World, operations: &[Operation]) -> Result<()> {
+        for operation in operations {
+            let Operation::SyncProduct { product_id, code } = operation else {
+                continue;
+            };
+            let code = code.clone().or_else(|| {
+                world
+                    .products
+                    .get(product_id)
+                    .and_then(|product| product.source_code.clone())
+            });
+            let Some(Ok(code)) = code.map(|code| validate::catalogue_code(&code)) else {
+                continue;
+            };
+            if let Entry::Vacant(slot) = world.catalogue.entry(code) {
+                let entry = self.catalogue.get_catalogue_entry(slot.key()).await?;
+                slot.insert(entry);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -764,25 +928,11 @@ fn edit_entity(
     operation: &Operation,
     created: &mut HashSet<Uuid>,
 ) -> Result<EntityChange> {
-    let (action, id, draft, changes) = match operation {
+    let (action, id, draft, changes, link) = match operation {
         Operation::CreateProduct { new_id, product } => {
             claim_new_id(world, created, *new_id)?;
             let draft = validate::product(product.clone())?;
-            world.products.insert(
-                *new_id,
-                Product {
-                    id: *new_id,
-                    name: draft.name.clone(),
-                    unit: draft.unit,
-                    macros: draft.macros,
-                    nutrients: draft.nutrients.clone(),
-                    cost: draft.cost,
-                    brand: draft.brand.clone(),
-                    source_code: None,
-                    created_at: OffsetDateTime::UNIX_EPOCH,
-                    updated_at: OffsetDateTime::UNIX_EPOCH,
-                },
-            );
+            put_product(world, *new_id, &draft, None, None);
             world.product_order.push(*new_id);
             let line = format!("New product, figures per 100 {}", draft.unit);
             (
@@ -790,6 +940,7 @@ fn edit_entity(
                 *new_id,
                 EntityDraft::Product(draft),
                 vec![line],
+                None,
             )
         }
 
@@ -799,67 +950,45 @@ fn edit_entity(
         } => {
             refuse_created(created, *product_id, "product")?;
             let current = world.product(*product_id)?.clone();
-            let unit = current.unit;
             let mut lines = Vec::new();
-            let mut draft = ProductDraft {
-                name: current.name.clone(),
-                unit,
-                macros: current.macros,
-                nutrients: current.nutrients.clone(),
-                cost: current.cost,
-                brand: current.brand.clone(),
-            };
+            let mut draft = product_draft(&current);
             if let Some(name) = changes.name.as_ref().filter(|name| **name != draft.name) {
                 lines.push(format!("Renamed from {} to {name}", draft.name));
                 draft.name = name.clone();
             }
-            if let Some(brand) = changes
-                .brand
-                .as_ref()
-                .filter(|brand| draft.brand.as_ref() != Some(*brand))
-            {
-                lines.push(format!("Brand {brand}"));
-                draft.brand = Some(brand.clone());
+            set_brand(&mut draft.brand, changes.brand.clone(), &mut lines);
+            if let Some(unit) = changes.unit.filter(|unit| *unit != draft.unit) {
+                lines.push(format!(
+                    "Figures now per 100 {unit} instead of per 100 {}",
+                    draft.unit
+                ));
+                draft.unit = unit;
             }
-            let per = format!("per 100 {unit}");
-            set_figure(
-                &mut draft.macros.energy_kcal,
-                changes.energy_kcal,
-                "Energy",
-                "kcal",
-                &per,
-                &mut lines,
-            );
-            set_figure(
-                &mut draft.macros.protein_g,
-                changes.protein_g,
-                "Protein",
-                "g",
-                &per,
-                &mut lines,
-            );
-            set_figure(
-                &mut draft.macros.fat_g,
-                changes.fat_g,
-                "Fat",
-                "g",
-                &per,
-                &mut lines,
-            );
-            set_figure(
-                &mut draft.macros.carbohydrates_g,
-                changes.carbohydrates_g,
-                "Carbs",
-                "g",
-                &per,
-                &mut lines,
-            );
-            if let Some(cost) = changes.cost.filter(|cost| Some(*cost) != draft.cost) {
-                lines.push(match draft.cost {
-                    Some(was) => format!("Cost {per} {was} → {cost}"),
-                    None => format!("Cost {per} {cost}"),
-                });
-                draft.cost = Some(cost);
+            let per = format!("per 100 {}", draft.unit);
+            for (field, wanted) in [
+                (MacroField::EnergyKcal, changes.energy_kcal),
+                (MacroField::ProteinG, changes.protein_g),
+                (MacroField::FatG, changes.fat_g),
+                (MacroField::CarbohydratesG, changes.carbohydrates_g),
+            ] {
+                set_macro(&mut draft.macros, field, wanted, &per, &mut lines);
+            }
+            match changes.cost {
+                Some(Some(cost)) if draft.cost != Some(cost) => {
+                    lines.push(match draft.cost {
+                        Some(was) => format!("Cost {per} {was} → {cost}"),
+                        None => format!("Cost {per} {cost}"),
+                    });
+                    draft.cost = Some(cost);
+                }
+                Some(None) if draft.cost.is_some() => {
+                    lines.push("Cost removed".to_owned());
+                    draft.cost = None;
+                }
+                _ => {}
+            }
+            for (key, wanted) in &changes.nutrients {
+                set_nutrient(&mut draft.nutrients, key, *wanted, &per, &mut lines);
             }
             if lines.is_empty() {
                 return Err(invalid(format!(
@@ -868,43 +997,100 @@ fn edit_entity(
                 )));
             }
             let draft = validate::product(draft)?;
-            world.products.insert(
-                *product_id,
-                Product {
-                    name: draft.name.clone(),
-                    macros: draft.macros,
-                    cost: draft.cost,
-                    brand: draft.brand.clone(),
-                    ..current
-                },
-            );
-            world.rederive_meals();
+            put_product(world, *product_id, &draft, Some(&current), None);
             (
                 EntityAction::Update,
                 *product_id,
                 EntityDraft::Product(draft),
                 lines,
+                None,
+            )
+        }
+
+        Operation::SyncProduct { product_id, code } => {
+            refuse_created(created, *product_id, "product")?;
+            let current = world.product(*product_id)?.clone();
+            let Some(code) = code.as_deref().or(current.source_code.as_deref()) else {
+                return Err(invalid(format!(
+                    "{} was entered by hand, so there is no Open Food Facts product to sync it \
+                     from; give its barcode",
+                    current.name
+                )));
+            };
+            let code = validate::catalogue_code(code)?;
+            let entry = world
+                .catalogue
+                .get(&code)
+                .cloned()
+                .ok_or_else(|| Error::Internal {
+                    reason: format!("catalogue entry {code} was not fetched before checking"),
+                })?;
+            let (draft, mut lines) = synced(&current, &entry)?;
+            let link = (current.source_code.as_deref() != Some(code.as_str())).then_some(code);
+            if let Some(code) = &link {
+                lines.insert(0, format!("Linked to Open Food Facts product {code}"));
+            }
+            put_product(world, *product_id, &draft, Some(&current), link.clone());
+            (
+                EntityAction::Update,
+                *product_id,
+                EntityDraft::Product(draft),
+                lines,
+                link,
+            )
+        }
+
+        Operation::UpdateTargets { changes } => {
+            let wanted = [
+                (MacroField::EnergyKcal, changes.energy_kcal),
+                (MacroField::ProteinG, changes.protein_g),
+                (MacroField::FatG, changes.fat_g),
+                (MacroField::CarbohydratesG, changes.carbohydrates_g),
+            ];
+            // With none set yet there is nothing to keep, so all four have to be given.
+            let complete = wanted.iter().all(|(_, value)| value.is_some());
+            let Some(mut macros) = world.targets.or(complete.then_some(Macros::ZERO)) else {
+                return Err(invalid(
+                    "there are no targets yet, so all four figures are needed".to_owned(),
+                ));
+            };
+            let mut lines = Vec::new();
+            for (field, value) in wanted {
+                set_macro(&mut macros, field, value, "a day", &mut lines);
+            }
+            if lines.is_empty() {
+                return Err(invalid("the update changes none of the targets".to_owned()));
+            }
+            let macros = validate::targets(macros)?;
+            world.targets = Some(macros);
+            (
+                EntityAction::Update,
+                Uuid::nil(),
+                EntityDraft::Targets(macros),
+                lines,
+                None,
             )
         }
 
         Operation::CreateMeal { new_id, meal } => {
             claim_new_id(world, created, *new_id)?;
-            // The categories are not in the context, so a new meal starts in none.
-            let draft = validate::meal(MealDraft {
-                category_id: None,
-                ..meal.clone()
-            })?;
+            let draft = validate::meal(meal.clone())?;
             for serving in &draft.servings {
                 world.product(serving.product_id)?;
             }
-            let line = format!("Made of {}", world.servings_text(&draft.servings));
+            let mut lines = vec![format!("Made of {}", world.servings_text(&draft.servings))];
+            if let Some(id) = draft.category_id {
+                let name = world.category_name(id, CategoryScope::Meal)?;
+                lines.push(format!("Filed under {name}"));
+            }
             put_meal(world, *new_id, &draft, None);
             world.meal_order.push(*new_id);
             (
                 EntityAction::Create,
                 *new_id,
                 EntityDraft::Meal(draft),
-                vec![line],
+                lines,
+                None,
             )
         }
 
@@ -929,6 +1115,12 @@ fn edit_entity(
                 lines.push(format!("Renamed from {} to {label}", draft.label));
                 draft.label = label.clone();
             }
+            world.recategorise(
+                &mut draft.category_id,
+                changes.category_id,
+                CategoryScope::Meal,
+                &mut lines,
+            )?;
             if let Some(servings) = changes
                 .servings
                 .as_ref()
@@ -957,23 +1149,25 @@ fn edit_entity(
                 *meal_id,
                 EntityDraft::Meal(draft),
                 lines,
+                None,
             )
         }
 
         Operation::CreateDayPlan { new_id, day_plan } => {
             claim_new_id(world, created, *new_id)?;
-            let draft = validate::day_plan(DayPlanDraft {
-                category_id: None,
-                ..day_plan.clone()
-            })?;
+            let draft = validate::day_plan(day_plan.clone())?;
             world.check_items(&draft.items)?;
-            let line = format!("Holds {}", world.items_text(&draft.items));
+            let mut lines = vec![format!("Holds {}", world.items_text(&draft.items))];
+            if let Some(id) = draft.category_id {
+                let name = world.category_name(id, CategoryScope::DayPlan)?;
+                lines.push(format!("Filed under {name}"));
+            }
             world.plans.insert(
                 *new_id,
                 DayPlan {
                     id: *new_id,
                     label: draft.label.clone(),
-                    category_id: None,
+                    category_id: draft.category_id,
                     source_plan_id: None,
                     items: draft.items.clone(),
                     created_at: OffsetDateTime::UNIX_EPOCH,
@@ -985,7 +1179,8 @@ fn edit_entity(
                 EntityAction::Create,
                 *new_id,
                 EntityDraft::DayPlan(draft),
-                vec![line],
+                lines,
+                None,
             )
         }
 
@@ -1009,6 +1204,12 @@ fn edit_entity(
                 lines.push(format!("Renamed from {} to {label}", draft.label));
                 draft.label = label.clone();
             }
+            world.recategorise(
+                &mut draft.category_id,
+                changes.category_id,
+                CategoryScope::DayPlan,
+                &mut lines,
+            )?;
             if let Some(items) = changes
                 .items
                 .as_ref()
@@ -1033,6 +1234,7 @@ fn edit_entity(
                 *day_plan_id,
                 DayPlan {
                     label: draft.label.clone(),
+                    category_id: draft.category_id,
                     items: draft.items.clone(),
                     ..current
                 },
@@ -1042,6 +1244,7 @@ fn edit_entity(
                 *day_plan_id,
                 EntityDraft::DayPlan(draft),
                 lines,
+                None,
             )
         }
 
@@ -1062,22 +1265,199 @@ fn edit_entity(
         id,
         draft,
         changes,
+        link,
     })
 }
 
-/// Sets one figure of a product and says so, when the update gives a different one.
-fn set_figure(
-    figure: &mut f64,
+/// Sets one of the four figures and says so, when the update gives a different one.
+fn set_macro(
+    macros: &mut Macros,
+    field: MacroField,
     wanted: Option<f64>,
-    name: &str,
-    unit: &str,
     per: &str,
     lines: &mut Vec<String>,
 ) {
+    let (name, unit, figure) = match field {
+        MacroField::EnergyKcal => ("Energy", "kcal", &mut macros.energy_kcal),
+        MacroField::ProteinG => ("Protein", "g", &mut macros.protein_g),
+        MacroField::FatG => ("Fat", "g", &mut macros.fat_g),
+        MacroField::CarbohydratesG => ("Carbs", "g", &mut macros.carbohydrates_g),
+    };
     if let Some(wanted) = wanted.filter(|wanted| wanted != figure) {
         lines.push(format!("{name} {per} {figure} {unit} → {wanted} {unit}"));
         *figure = wanted;
     }
+}
+
+/// Sets, replaces or removes a product's brand and says so, when that changes it.
+fn set_brand(brand: &mut Option<String>, wanted: Option<Option<String>>, lines: &mut Vec<String>) {
+    match wanted {
+        Some(Some(wanted)) if brand.as_ref() != Some(&wanted) => {
+            lines.push(format!("Brand {wanted}"));
+            *brand = Some(wanted);
+        }
+        Some(None) if brand.is_some() => {
+            lines.push("Brand removed".to_owned());
+            *brand = None;
+        }
+        _ => {}
+    }
+}
+
+/// Sets or removes one nutrient beyond the macros and says so, when that changes it.
+fn set_nutrient(
+    nutrients: &mut Nutrients,
+    key: &str,
+    wanted: Option<f64>,
+    per: &str,
+    lines: &mut Vec<String>,
+) {
+    let key = key.trim();
+    let name = nutrient_name(key);
+    let line = match (nutrients.get(key).copied(), wanted) {
+        (Some(was), Some(value)) if was != value => {
+            format!("{name} {per} {} → {}", mass(was), mass(value))
+        }
+        (None, Some(value)) => format!("{name} {per} {}", mass(value)),
+        (Some(_), None) => format!("{name} removed"),
+        _ => return,
+    };
+    lines.push(line);
+    match wanted {
+        Some(value) => nutrients.insert(key.to_owned(), value),
+        None => nutrients.remove(key),
+    };
+}
+
+/// What a product becomes when its figures are replaced by the catalogue entry's, and
+/// what that changes.
+///
+/// The name and the price are the user's and stay. A macro the catalogue lacks keeps the
+/// figure the product has rather than becoming zero, and the catalogue's own doubts about
+/// its figures are passed on, because the user is about to take them on trust.
+fn synced(current: &Product, entry: &CatalogueEntry) -> Result<(ProductDraft, Vec<String>)> {
+    let mut draft = product_draft(current);
+    let mut lines = Vec::new();
+    if let Some(brand) = &entry.brand {
+        set_brand(&mut draft.brand, Some(Some(brand.clone())), &mut lines);
+    }
+    if entry.unit != draft.unit {
+        lines.push(format!(
+            "Figures now per 100 {} instead of per 100 {}",
+            entry.unit, draft.unit
+        ));
+        draft.unit = entry.unit;
+    }
+    let per = format!("per 100 {}", draft.unit);
+    for (field, value) in [
+        (MacroField::EnergyKcal, entry.macros.energy_kcal),
+        (MacroField::ProteinG, entry.macros.protein_g),
+        (MacroField::FatG, entry.macros.fat_g),
+        (MacroField::CarbohydratesG, entry.macros.carbohydrates_g),
+    ] {
+        let wanted = (!entry.missing_macros.contains(&field)).then_some(value);
+        set_macro(&mut draft.macros, field, wanted, &per, &mut lines);
+    }
+    let keys: Vec<String> = current
+        .nutrients
+        .keys()
+        .chain(entry.nutrients.keys())
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    for key in keys {
+        let wanted = entry.nutrients.get(&key).copied();
+        set_nutrient(&mut draft.nutrients, &key, wanted, &per, &mut lines);
+    }
+    if lines.is_empty() {
+        return Err(invalid(format!(
+            "{} already matches Open Food Facts",
+            current.name
+        )));
+    }
+    if !entry.missing_macros.is_empty() {
+        lines.push("Open Food Facts lacks some of the four figures; those are kept".to_owned());
+    }
+    lines.extend(
+        entry
+            .warnings
+            .iter()
+            .map(|warning| format!("Open Food Facts notes: {warning}")),
+    );
+    Ok((validate::product(draft)?, lines))
+}
+
+/// The product as a draft, every field as it is, for an edit to start from.
+fn product_draft(product: &Product) -> ProductDraft {
+    ProductDraft {
+        name: product.name.clone(),
+        unit: product.unit,
+        macros: product.macros,
+        nutrients: product.nutrients.clone(),
+        cost: product.cost,
+        brand: product.brand.clone(),
+    }
+}
+
+/// Puts a product into the data and re-derives the meals that may hold it.
+fn put_product(
+    world: &mut World,
+    id: Uuid,
+    draft: &ProductDraft,
+    current: Option<&Product>,
+    link: Option<String>,
+) {
+    let product = Product {
+        id,
+        name: draft.name.clone(),
+        unit: draft.unit,
+        macros: draft.macros,
+        nutrients: draft.nutrients.clone(),
+        cost: draft.cost,
+        brand: draft.brand.clone(),
+        source_code: link.or_else(|| current.and_then(|product| product.source_code.clone())),
+        created_at: current.map_or(OffsetDateTime::UNIX_EPOCH, |product| product.created_at),
+        updated_at: current.map_or(OffsetDateTime::UNIX_EPOCH, |product| product.updated_at),
+    };
+    world.products.insert(id, product);
+    world.rederive_meals();
+}
+
+/// "Vitamin c" for `vitamin-c`: the catalogue's key, readable in a change line.
+fn nutrient_name(key: &str) -> String {
+    let words = key.replace(['-', '_'], " ");
+    let mut chars = words.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
+/// A nutrient figure, stored in grams, in the unit a label would print it in.
+fn mass(grams: f64) -> String {
+    let (value, unit) = if grams == 0.0 || grams.abs() >= 1.0 {
+        (grams, "g")
+    } else if grams.abs() >= 0.001 {
+        (grams * 1e3, "mg")
+    } else {
+        (grams * 1e6, "µg")
+    };
+    format!("{} {unit}", significant(value))
+}
+
+/// Four significant figures. A nutrient in grams runs from tens of grams of fibre to
+/// micrograms of B12, so a fixed number of decimals would either pad the one or zero the
+/// other.
+fn significant(value: f64) -> f64 {
+    if value == 0.0 || !value.is_finite() {
+        return value;
+    }
+    // A float's decimal exponent is within ±330, so the cast cannot truncate.
+    #[allow(clippy::cast_possible_truncation)]
+    let magnitude = value.abs().log10().floor() as i32;
+    let scale = 10f64.powi(3 - magnitude);
+    (value * scale).round() / scale
 }
 
 /// Puts a meal into the data, with its totals derived as a stored one's would be.
@@ -1353,7 +1733,9 @@ fn edit(world: &World, operation: &Operation, change: &mut DayChange) -> Result<
         | Operation::CreateMeal { .. }
         | Operation::UpdateMeal { .. }
         | Operation::CreateDayPlan { .. }
-        | Operation::UpdateDayPlan { .. } => {
+        | Operation::UpdateDayPlan { .. }
+        | Operation::SyncProduct { .. }
+        | Operation::UpdateTargets { .. } => {
             return Err(Error::Internal {
                 reason: format!("{} names no date", operation.kind().name()),
             });
@@ -1421,6 +1803,7 @@ fn preview(world: &World, proposal: Proposal, resolved: &Resolved) -> Preview {
                     .get(&change.id)
                     .map_or(Macros::ZERO, |meal| meal.macros),
                 EntityDraft::DayPlan(draft) => after_world.macros_of(&draft.items),
+                EntityDraft::Targets(macros) => *macros,
             };
             PreviewEntity {
                 kind,
@@ -1452,7 +1835,8 @@ fn preview(world: &World, proposal: Proposal, resolved: &Resolved) -> Preview {
                 after,
                 // Against the target rather than against `before`: the target is the
                 // figure the day is planned towards, and the deviation is what to read.
-                target_delta: world.targets.map(|target| after + target.scale(-1.0)),
+                // The targets as they would be, when the same proposal changes them.
+                target_delta: after_world.targets.map(|target| after + target.scale(-1.0)),
                 detaches: change.detaches(),
             }
         })
@@ -1462,7 +1846,7 @@ fn preview(world: &World, proposal: Proposal, resolved: &Resolved) -> Preview {
         proposal,
         entities,
         days,
-        targets: world.targets,
+        targets: after_world.targets,
     }
 }
 
@@ -1595,6 +1979,8 @@ mod tests {
                 .collect(),
             meals,
             products,
+            categories: Vec::new(),
+            catalogue: HashMap::new(),
         };
 
         Fixture {
@@ -2078,7 +2464,7 @@ mod tests {
                 product_id: f.whey,
                 changes: ProductPatch {
                     energy_kcal: Some(400.0),
-                    cost: Some(2.5),
+                    cost: Some(Some(2.5)),
                     ..ProductPatch::default()
                 },
             },

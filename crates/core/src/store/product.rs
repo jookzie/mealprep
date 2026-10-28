@@ -27,5 +27,9 @@ pub trait ProductStore {
 
     async fn update_product(&self, id: Uuid, draft: &ProductDraft) -> Result<Product>;
 
+    /// Records the catalogue code the product is now kept in step with, leaving every
+    /// other field as it is.
+    async fn set_product_source(&self, id: Uuid, source_code: &str) -> Result<()>;
+
     async fn delete_product(&self, id: Uuid) -> Result<()>;
 }

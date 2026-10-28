@@ -5,8 +5,8 @@
 //! does anything change.
 //!
 //! Two families of operation. Most are about days — "the next four days", "tomorrow" — and
-//! name the dates they act on. The rest create or change a product, a meal or a day plan
-//! itself, name no date, and reach every date that uses what they change.
+//! name the dates they act on. The rest create or change a product, a meal, a day plan or
+//! the targets themselves, name no date, and reach every date that uses what they change.
 //!
 //! **Adding an operation costs three edits and nothing else:**
 //!
@@ -22,11 +22,16 @@
 //! operation says what it wants, the resolver says what each day becomes, and one applier
 //! walks the result.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
-use super::{DayPlanDraft, DayPlanItem, Macros, MealDraft, ProductDraft, Serving, Unit};
+use super::{
+    CategoryScope, DayPlanDraft, DayPlanItem, Macros, MealDraft, Nutrients, ProductDraft, Serving,
+    Unit,
+};
 
 /// A span of dates an operation acts on, both ends inclusive.
 ///
@@ -139,16 +144,37 @@ pub enum Operation {
         day_plan_id: Uuid,
         changes: DayPlanPatch,
     },
+
+    /// Replace a product's figures with the catalogue's current ones, by the code it was
+    /// imported from or the one given. The figures are fetched when the proposal is
+    /// checked, so the model never has to know them.
+    SyncProduct {
+        product_id: Uuid,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<String>,
+    },
+
+    /// Change some of the daily targets.
+    UpdateTargets { changes: TargetsPatch },
 }
 
-/// The fields of a product an update changes; a field left out keeps its value.
+/// The fields of a product an update changes; a field left out keeps its value, and a
+/// field a product can lack is removed by `null`.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "super::format::nullable::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub brand: Option<Option<String>>,
+    /// What the figures are per 100 of. Changing it reinterprets every amount already
+    /// served of the product, so it is for correcting a product entered wrongly.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub brand: Option<String>,
+    pub unit: Option<Unit>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub energy_kcal: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -158,28 +184,64 @@ pub struct ProductPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub carbohydrates_g: Option<f64>,
     /// Per 100 g or ml.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cost: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "super::format::nullable::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cost: Option<Option<f64>>,
+    /// The nutrients beyond the macros that change, per 100 of the unit and keyed as the
+    /// product keys them; `null` removes one. Those not named keep their values.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub nutrients: BTreeMap<String, Option<f64>>,
 }
 
-/// The parts of a meal an update changes; the servings, when given, replace them all.
+/// The parts of a meal an update changes; the servings, when given, replace them all, and
+/// a `null` category takes it out of the one it is in.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MealPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "super::format::nullable::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub category_id: Option<Option<Uuid>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub servings: Option<Vec<Serving>>,
 }
 
-/// The parts of a day plan an update changes; the items, when given, replace them all.
+/// The parts of a day plan an update changes; the items, when given, replace them all, and
+/// a `null` category takes it out of the one it is in.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DayPlanPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "super::format::nullable::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub category_id: Option<Option<Uuid>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub items: Option<Vec<DayPlanItem>>,
+}
+
+/// The daily targets an update changes; a figure left out keeps its value.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetsPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_kcal: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protein_g: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fat_g: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carbohydrates_g: Option<f64>,
 }
 
 impl Operation {
@@ -197,6 +259,8 @@ impl Operation {
             Self::UpdateMeal { .. } => OperationKind::UpdateMeal,
             Self::CreateDayPlan { .. } => OperationKind::CreateDayPlan,
             Self::UpdateDayPlan { .. } => OperationKind::UpdateDayPlan,
+            Self::SyncProduct { .. } => OperationKind::SyncProduct,
+            Self::UpdateTargets { .. } => OperationKind::UpdateTargets,
         }
     }
 
@@ -214,16 +278,21 @@ impl Operation {
             | Self::CreateMeal { .. }
             | Self::UpdateMeal { .. }
             | Self::CreateDayPlan { .. }
-            | Self::UpdateDayPlan { .. } => None,
+            | Self::UpdateDayPlan { .. }
+            | Self::SyncProduct { .. }
+            | Self::UpdateTargets { .. } => None,
         }
     }
 
     /// The kind of entity an entity edit is about, or `None` for a day edit.
     pub fn entity(&self) -> Option<EntityKind> {
         match self {
-            Self::CreateProduct { .. } | Self::UpdateProduct { .. } => Some(EntityKind::Product),
+            Self::CreateProduct { .. } | Self::UpdateProduct { .. } | Self::SyncProduct { .. } => {
+                Some(EntityKind::Product)
+            }
             Self::CreateMeal { .. } | Self::UpdateMeal { .. } => Some(EntityKind::Meal),
             Self::CreateDayPlan { .. } | Self::UpdateDayPlan { .. } => Some(EntityKind::DayPlan),
+            Self::UpdateTargets { .. } => Some(EntityKind::Targets),
             Self::AdjustProductAmount { .. }
             | Self::AddItem { .. }
             | Self::RemoveItem { .. }
@@ -235,13 +304,14 @@ impl Operation {
 }
 
 /// What an entity edit is about, in the order entity edits are applied: a meal can name a
-/// product the same proposal creates, and a day plan a meal.
+/// product the same proposal creates, and a day plan a meal. The targets name nothing.
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EntityKind {
     Product,
     Meal,
     DayPlan,
+    Targets,
 }
 
 /// Whether an entity edit makes something new or changes what is there.
@@ -273,11 +343,13 @@ pub enum OperationKind {
     UpdateMeal,
     CreateDayPlan,
     UpdateDayPlan,
+    SyncProduct,
+    UpdateTargets,
 }
 
 impl OperationKind {
     /// Every kind of operation there is.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 14] = [
         Self::AdjustProductAmount,
         Self::AddItem,
         Self::RemoveItem,
@@ -290,6 +362,8 @@ impl OperationKind {
         Self::UpdateMeal,
         Self::CreateDayPlan,
         Self::UpdateDayPlan,
+        Self::SyncProduct,
+        Self::UpdateTargets,
     ];
 
     /// The name the kind travels under: the `kind` tag of [`Operation`] on the wire, and
@@ -309,6 +383,8 @@ impl OperationKind {
             Self::UpdateMeal => "update-meal",
             Self::CreateDayPlan => "create-day-plan",
             Self::UpdateDayPlan => "update-day-plan",
+            Self::SyncProduct => "sync-product",
+            Self::UpdateTargets => "update-targets",
         }
     }
 
@@ -335,9 +411,10 @@ pub enum ItemRef {
 
 /// What the assistant is told about the user's data.
 ///
-/// Compact on purpose: the days around today with what is on them, and the labels and ids
-/// of what could be put on them. No nutrient tables, no history, no weigh-ins — the model
-/// only has to turn a sentence into operations over these ids.
+/// The days around today with what is on them and what that adds up to, and what could be
+/// put on them with its figures, so the model can both turn a sentence into operations
+/// over these ids and answer a question about the plan's nutrients. No prices, no history,
+/// no weigh-ins.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistantContext {
@@ -351,6 +428,9 @@ pub struct AssistantContext {
     pub plans: Vec<ContextPlan>,
     pub meals: Vec<ContextMeal>,
     pub products: Vec<ContextProduct>,
+    /// The categories meals and day plans can be filed under.
+    #[serde(default)]
+    pub categories: Vec<ContextCategory>,
 }
 
 /// One date in the context: what it holds now, and what that adds up to.
@@ -363,6 +443,11 @@ pub struct ContextDay {
     pub label: Option<String>,
     pub items: Vec<ContextItem>,
     pub macros: Macros,
+    /// The day's nutrients beyond the macros, summed over the products that state each
+    /// one. A product that does not state a nutrient adds nothing to it, so a total is a
+    /// floor.
+    #[serde(default, skip_serializing_if = "Nutrients::is_empty")]
+    pub nutrients: Nutrients,
 }
 
 /// One entry of a context day's order.
@@ -391,6 +476,8 @@ pub enum ContextItem {
 pub struct ContextPlan {
     pub id: Uuid,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<Uuid>,
     /// What the plan holds, so an update can say what it becomes.
     pub items: Vec<DayPlanItem>,
 }
@@ -401,6 +488,8 @@ pub struct ContextPlan {
 pub struct ContextMeal {
     pub id: Uuid,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<Uuid>,
     /// What the meal is made of, so an update can say what it becomes.
     pub servings: Vec<Serving>,
 }
@@ -412,8 +501,26 @@ pub struct ContextProduct {
     pub id: Uuid,
     pub name: String,
     pub unit: Unit,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brand: Option<String>,
     /// Per 100 g or ml, so a new meal can be sized against the targets.
     pub macros: Macros,
+    /// Per 100 g or ml, in grams, keyed by the catalogue's names.
+    #[serde(default, skip_serializing_if = "Nutrients::is_empty")]
+    pub nutrients: Nutrients,
+    /// Whether the product came from the catalogue, and so can be synced from it without
+    /// being given a code.
+    #[serde(default)]
+    pub synced: bool,
+}
+
+/// A category a meal or day plan may be filed under.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextCategory {
+    pub id: Uuid,
+    pub name: String,
+    pub scope: CategoryScope,
 }
 
 /// What the assistant answered: the operations it proposes, and why.
@@ -482,13 +589,14 @@ pub struct PreviewEntity {
     pub dates_using: usize,
 }
 
-/// What an applied request did to one product, meal or day plan.
+/// What an applied request did to one product, meal, day plan or the targets.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppliedEntityChange {
     pub kind: EntityKind,
     pub action: EntityAction,
-    /// The real id, as the store assigned it for a create.
+    /// The real id, as the store assigned it for a create; nil for the targets, of which
+    /// there is only one set.
     pub id: Uuid,
     pub label: String,
     pub changes: Vec<String>,

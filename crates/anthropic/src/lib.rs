@@ -1,10 +1,11 @@
 //! Claude as the Mealprep planning assistant.
 //!
-//! One request, one answer: the user's correction and a compact view of their plan go to
-//! the Messages API, and the reply comes back as tool calls — one per edit — plus a
-//! sentence or two of prose. The tool calls become [`Operation`]s and the prose becomes
-//! the rationale; nothing here writes anything, and nothing here decides whether an
-//! operation is allowed. `mealprep-core` checks all of that against the real data.
+//! One request, one answer: the user's correction or question and a view of their plan go
+//! to the Messages API, and the reply comes back as tool calls — one per edit — plus some
+//! prose. The tool calls become [`Operation`]s and the prose becomes the rationale, which
+//! for a question is the whole answer; nothing here writes anything, and nothing here
+//! decides whether an operation is allowed. `mealprep-core` checks all of that against
+//! the real data.
 //!
 //! The key is the user's own, supplied per call by the rules, and the only place it goes
 //! is the `x-api-key` header of this one request.
@@ -46,13 +47,20 @@ const TIMEOUT: Duration = Duration::from_secs(120);
 /// a model that knows a past date will be refused proposes a workable edit instead of one
 /// the user has to watch fail.
 const SYSTEM: &str = "\
-You turn one plain-language request about a meal plan into typed operations by calling the \
-tools. An edit only happens through a tool call; prose never changes anything.
+You are the assistant of a meal-planning app. A request is either a change to make, which \
+you turn into typed operations by calling the tools, or a question, which you answer in \
+prose without calling any. An edit only happens through a tool call; prose never changes \
+anything.
 
 The user's data comes with the request as JSON: `today`, their daily macro `targets`, \
-`days` (one entry per date you can see, with the plan on it and that plan's order), and the \
-`plans` (with their items), `meals` (with their servings) and `products` (with macros per \
-100 g or ml) they have, each with its id.
+`days` (one entry per date you can see, with the plan on it, that plan's order, its macros \
+and its `nutrients`), the `plans` (with their items), `meals` (with their servings) and \
+`products` (with macros and `nutrients` per 100 g or ml) they have, each with its id, and \
+the `categories` meals and plans are filed under.
+
+Nutrients beyond the four macros are in grams, keyed by Open Food Facts name (`vitamin-c`, \
+`iron`, `fiber`, `salt`, …). A day's `nutrients` sum only the products that state each one, \
+so a figure is a floor, and a nutrient no product states is unknown rather than zero.
 
 - Use only ids that appear in that context, or the newId of something a create call in \
 the same reply makes. Never guess at something you cannot find by name — say what is \
@@ -74,12 +82,28 @@ thing. A run of consecutive dates is one call with a date range, not one call pe
 inside a meal belongs to that meal, which every other day on that meal shares.
 - An item a day holds twice cannot be named: the app refuses it, because order is the only \
 sequence a day carries. Say which two entries it could be instead of picking one.
+- Any field of a product, meal, day plan or the targets can be changed: a product's \
+nutrients, brand, unit and price as well as its macros, and the category of a meal or plan. \
+To sync, refresh or update a product from Open Food Facts or \"online\", call sync-product \
+rather than giving figures yourself: the app fetches them.
 - When the request cannot be expressed with these tools, or the context lacks what it \
 needs, make no call and say in one sentence what is missing.
 
-Your text reply is shown to the user above the change, for them to confirm or discard, so \
-make it one or two plain sentences saying what you did, in everyday words: no ids, no tool \
-names. The app checks every operation \
+Questions — \"how much iron am I getting\", \"what's my vitamin D against the RDI\", \"which \
+day is lowest in fibre\" — are answered from the context with no call. Compare \
+micronutrients against the EU reference intakes for an adult (Regulation 1169/2011, Annex \
+XIII) unless the user gives other figures, give amounts in the unit a label uses (mg, µg) \
+with the share of the reference as a percentage, and say which nutrients are unknown or \
+only partly known because products do not state them. For \"my\" figures say once that \
+personal needs vary with age, sex and circumstances. Be factual: no diagnosis and no \
+supplement advice. Unless the user names days, use today and the days after it that have \
+a plan, and say which days you used.
+
+Your text is shown to the user as plain text — no Markdown, no tables, no headings; use \
+short lines and \"- \" for a list. For a change it sits above the change, for them to \
+confirm or discard, so make it one or two plain sentences saying what you did. For a \
+question it is the whole answer, so make it as long as the question needs and no longer. \
+Either way use everyday words: no ids, no tool names. The app checks every operation \
 against the real data and applies nothing without that confirmation, so propose what the \
 request actually says rather than hedging.";
 
@@ -328,13 +352,17 @@ mod tests {
                 id: uuid!("3f9a1c52-0000-4000-8000-000000000001"),
                 name: "Whey".to_owned(),
                 unit: Unit::Gram,
+                brand: None,
                 macros: Macros {
                     energy_kcal: 380.0,
                     fat_g: 6.0,
                     protein_g: 80.0,
                     carbohydrates_g: 8.0,
                 },
+                nutrients: [("calcium".to_owned(), 0.5)].into(),
+                synced: true,
             }],
+            categories: Vec::new(),
         }
     }
 
@@ -354,6 +382,8 @@ mod tests {
         assert!(content.ends_with("next 4 days I have 40 g less whey"));
         assert!(content.contains("\"today\":\"2026-10-20\""), "{content}");
         assert!(content.contains("Whey"), "{content}");
+        // The nutrients go too, so a question about them can be answered.
+        assert!(content.contains("\"calcium\":0.5"), "{content}");
         // The key is a header, never part of the body.
         assert!(!body.to_string().contains("x-api-key"));
     }

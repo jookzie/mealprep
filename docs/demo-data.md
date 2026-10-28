@@ -76,6 +76,9 @@ only when the data itself changed.
 | A product an assistant request can adjust | Training day A and B | 60 g of whey as an item of the day's own order, not inside a meal |
 | An applied assistant request | Assistant → History | "the next few training days I have 40 g less whey", three days changed |
 | The log is enough to undo by hand | Assistant → History → the entry | Each date says what it pointed at before, by label and id |
+| An applied edit to a product's nutrients | Assistant → History, Products → Rolled oats | "my oats have 4.3 mg iron and 130 mg magnesium per 100 g", one item changed |
+| Micronutrients a question can be answered from | Any plan with milk, banana, broccoli, eggs, salmon or orange juice | Calcium, potassium, iron, magnesium and vitamins C, D and B12 from the label; most products state none, so totals are floors |
+| A product the assistant can sync | Products → Whey protein, vanilla, and the other imports | Imported, so it carries a code; the codes are fictional, so a sync needs a real barcode given in the request |
 | Copy-on-write per date | Calendar, the next few training days | Three days on their own copy of Training day A, with 20 g of whey |
 | The past is unmoved by an edit ahead | Calendar, the training days already past | Still on the original Training day A, with its 60 g |
 | Day-local copies stay out of the lists | Day plans, and the assign dialog | Six plans; the three copies appear in neither |

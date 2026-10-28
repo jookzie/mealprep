@@ -191,32 +191,52 @@ export type Operation =
 	| { kind: 'create-meal'; newId: string; meal: MealDraft }
 	| { kind: 'update-meal'; mealId: string; changes: MealPatch }
 	| { kind: 'create-day-plan'; newId: string; dayPlan: DayPlanDraft }
-	| { kind: 'update-day-plan'; dayPlanId: string; changes: DayPlanPatch };
+	| { kind: 'update-day-plan'; dayPlanId: string; changes: DayPlanPatch }
+	| { kind: 'sync-product'; productId: string; code?: string }
+	| { kind: 'update-targets'; changes: TargetsPatch };
 
-/** The fields of a product an update changes; what is left out keeps its value. */
+/**
+ * The fields of a product an update changes; what is left out keeps its value, and `null`
+ * removes a field a product can lack.
+ */
 export type ProductPatch = {
 	name?: string;
-	brand?: string;
+	brand?: string | null;
+	unit?: Unit;
 	energyKcal?: number;
 	proteinG?: number;
 	fatG?: number;
 	carbohydratesG?: number;
-	cost?: number;
+	cost?: number | null;
+	/** Grams per 100 of the unit; `null` removes one. */
+	nutrients?: Record<string, number | null>;
 };
 
 /** The parts of a meal an update changes; servings, when given, replace them all. */
 export type MealPatch = {
 	label?: string;
+	/** `null` takes the meal out of its category. */
+	categoryId?: string | null;
 	servings?: Serving[];
 };
 
 /** The parts of a day plan an update changes; items, when given, replace them all. */
 export type DayPlanPatch = {
 	label?: string;
+	/** `null` takes the plan out of its category. */
+	categoryId?: string | null;
 	items?: DayPlanItemDraft[];
 };
 
-export type EntityKind = 'product' | 'meal' | 'day-plan';
+/** The daily targets an update changes; what is left out keeps its value. */
+export type TargetsPatch = {
+	energyKcal?: number;
+	proteinG?: number;
+	fatG?: number;
+	carbohydratesG?: number;
+};
+
+export type EntityKind = 'product' | 'meal' | 'day-plan' | 'targets';
 export type EntityAction = 'create' | 'update';
 
 export type OperationKind = Operation['kind'];
@@ -242,13 +262,13 @@ export type PreviewDay = {
 	detaches: boolean;
 };
 
-/** What one product, meal or day plan would become. */
+/** What one product, meal, day plan or the targets would become. */
 export type PreviewEntity = {
 	kind: EntityKind;
 	action: EntityAction;
 	label: string;
 	changes: string[];
-	/** Per 100 g or ml for a product; the whole meal or day for the others. */
+	/** Per 100 g or ml for a product; the whole meal or day for a meal or plan; per day for the targets. */
 	macros: Macros;
 	/** How many dates in view already use it, and so follow an update. */
 	datesUsing: number;
