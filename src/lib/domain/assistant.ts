@@ -1,7 +1,4 @@
 import type {
-	AppliedChange,
-	AppliedEntityChange,
-	AssistantRecord,
 	ChatTurn,
 	DateRange,
 	EntityKind,
@@ -144,40 +141,6 @@ export function chatHistory(messages: readonly ChatMessage[]): ChatTurn[] {
  */
 export function dayDelta(day: PreviewDay): Macros {
 	return deviation(day.after, day.before);
-}
-
-/**
- * The one line that says how to put an applied change back by hand.
- *
- * There is no undo command. The log keeps what each date pointed at before, which is all
- * reversing it takes: put that plan on the day again, or clear it when it had none.
- */
-export function reversalHint(change: AppliedChange): string {
-	if (!change.previousDayPlanId) {
-		return 'Was unplanned — clear the day on the calendar to undo.';
-	}
-	if (!change.previousLabel) {
-		return 'Was on a plan that has since been deleted.';
-	}
-	return `Was ${change.previousLabel} — put ${change.previousLabel} back on the day to undo.`;
-}
-
-/** "New meal: Oat bowl", one entity of the log in a line. */
-export function appliedEntityLine(change: AppliedEntityChange): string {
-	return `${entityHeading(change)}: ${change.label}`;
-}
-
-/** What one entry of the log did, in one line. */
-export function recordSummary(record: AssistantRecord): string {
-	const entities = record.entityChanges ?? [];
-	const created = entities.filter((change) => change.action === 'create').length;
-	const updated = entities.length - created;
-	const parts = [
-		...(created > 0 ? [`${plural(created, 'item', 'items')} added`] : []),
-		...(updated > 0 ? [`${plural(updated, 'item', 'items')} changed`] : []),
-		...(record.changes.length > 0 ? [`${plural(record.changes.length, 'day', 'days')} changed`] : []),
-	];
-	return parts.length === 0 ? 'Nothing changed' : parts.join(' · ');
 }
 
 /**
