@@ -850,6 +850,44 @@ async fn the_assistant_is_off_until_a_key_is_pasted_in() {
     mealprep.clear_assistant_key().await.unwrap();
 }
 
+#[tokio::test]
+async fn a_sync_writes_the_catalogues_figures_and_links_the_product_to_its_code() {
+    let catalogue = FixedCatalogue {
+        entries: vec![entry("5701234567890")],
+    };
+    let mealprep = mealprep(catalogue).await;
+    mealprep
+        .set_assistant_key("sk-ant-test-key".to_owned())
+        .await
+        .unwrap();
+    let skyr = mealprep
+        .create_product(product_draft("My skyr", 60.0, Some(0.5)))
+        .await
+        .unwrap();
+    assert_eq!(skyr.source_code, None);
+
+    mealprep
+        .apply_assistant_edit(Proposal {
+            request: "sync my skyr, barcode 5701234567890".to_owned(),
+            rationale: "Synced your skyr.".to_owned(),
+            operations: vec![Operation::SyncProduct {
+                product_id: skyr.id,
+                code: Some("5701234567890".to_owned()),
+            }],
+        })
+        .await
+        .unwrap();
+
+    let synced = mealprep.get_product(skyr.id).await.unwrap();
+    assert_eq!(synced.source_code.as_deref(), Some("5701234567890"));
+    assert_eq!(synced.name, "My skyr");
+    assert_eq!(synced.cost, Some(0.5));
+    assert_eq!(synced.macros.energy_kcal, 63.0);
+    assert_eq!(synced.brand.as_deref(), Some("arla"));
+    // The entry states no fibre, so the product no longer claims any.
+    assert!(synced.nutrients.is_empty(), "{:?}", synced.nutrients);
+}
+
 /// How much of the given product a resolved plan carries as an item of its own.
 fn amount_of(plan: &ResolvedDayPlan, product_id: Uuid) -> Option<f64> {
     plan.items.iter().find_map(|item| match item {

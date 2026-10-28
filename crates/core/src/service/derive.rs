@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::domain::{
-    Cost, DayPlan, DayPlanItem, Derived, LooseProduct, Macros, Meal, Product, ResolvedDayPlan,
-    ResolvedDayPlanItem, Serving,
+    Cost, DayPlan, DayPlanItem, Derived, LooseProduct, Macros, Meal, Nutrients, Product,
+    ResolvedDayPlan, ResolvedDayPlanItem, Serving,
 };
 
 /// Products by id, as every derivation joins against them.
@@ -30,6 +30,24 @@ pub(super) fn serving_macros(serving: &Serving, products: &ProductIndex) -> Macr
         .map_or(Macros::ZERO, |product| {
             product.macros.scale(serving.amount / 100.0)
         })
+}
+
+/// Adds what the given serving contributes to each nutrient beyond the macros, on the same
+/// terms as [`serving_macros`].
+///
+/// A nutrient the product does not state adds nothing rather than counting as zero, so a
+/// sum over several products is a floor for any nutrient one of them leaves out.
+pub(super) fn add_serving_nutrients(
+    serving: &Serving,
+    products: &ProductIndex,
+    totals: &mut Nutrients,
+) {
+    let Some(product) = products.get(&serving.product_id) else {
+        return;
+    };
+    for (key, value) in &product.nutrients {
+        *totals.entry(key.clone()).or_default() += value * serving.amount / 100.0;
+    }
 }
 
 /// Derives what the given serving costs, on the same terms as [`serving_macros`].

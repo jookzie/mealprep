@@ -51,7 +51,7 @@ Section 4 for what to build, Sections 3 and 5 for the constraints around it.
 - **Catalogue** — OFF as the application sees it, behind the `Catalogue` trait.
 - **Assistant** — what turns a plain-language request into typed operations, behind the `Assistant` trait. Claude, reached over HTTPS with the user's own API key.
 - **Operation** — one typed edit the assistant may propose, bounded to the dates it acts on. The set is closed, and the application rather than the model decides what each one means.
-- **Proposal** — what the assistant answered: operations and a short rationale. Unchecked, and never applied without a confirmation.
+- **Proposal** — what the assistant answered: operations and its prose, which is the whole answer when the request was a question. Unchecked, and never applied without a confirmation.
 - **Preview** — a checked proposal: which dates would change, what changes on each, and where that leaves the day against the targets.
 - **Day-local copy** — one date's own copy of a day plan, made so that editing that date cannot move every other date assigned the same plan. It carries `source_plan_id`, and appears in no list and no picker.
 - **SRS** — this document.
@@ -138,7 +138,7 @@ Nutrients are shown as the four macros, with the full nutrient set behind an exp
 | Calendar | `/calendar` | `CL-1`–`CL-5`, `TG-2`, `TG-3` |
 | Targets | `/targets` | `TG-1`, `WT-6`, `DT-1`–`DT-4` — the macro targets, the weight trend beside them, and exporting or importing the data |
 | Weight | `/weight` | `WT-1`–`WT-7` — quick log, the graph, and the weigh-in history |
-| Assistant | `/assistant` | `AS-1`–`AS-13` — the request, the preview with Apply or Discard, the API key, and what has been applied |
+| Assistant | `/assistant` | `AS-1`–`AS-15` — the request, the preview with Apply or Discard or the answer to a question, the API key, and what has been applied |
 
 Creating and editing are screens rather than dialogs, because every write replaces the whole
 entity and so has to start from a fresh read. Dialogs carry what is genuinely one decision:
@@ -332,9 +332,11 @@ what would change on each date. The user applies it, or discards it.
 - `AS-8` The system shall record every applied request — what was asked, what the assistant said, the operations, what each date pointed at before, and when — and shall show it. The record shall be enough to reverse the change by hand.
 - `AS-9` The system shall require the user's own API key for the assistant, shall keep it on the device, shall never return it in full, and shall send nothing to the assistant while there is none.
 - `AS-10` Adding a kind of operation shall not change how a proposal is previewed, confirmed or applied.
-- `AS-11` The system shall let the assistant propose creating a product, meal or day plan, and changing the fields of an existing one, each checked by the same rules the screens' own forms apply. A change to an existing one shall touch only the fields it names.
+- `AS-11` The system shall let the assistant propose creating a product, meal or day plan, and changing any field of an existing one or of the targets — a product's name, brand, unit, macros, further nutrients and price, a meal's or plan's name, category and contents — each checked by the same rules the screens' own forms apply. A change to an existing one shall touch only the fields it names, and shall be able to remove a field a product may lack.
 - `AS-12` The preview shall name each product, meal or day plan a proposal creates or changes and say what changes in plain words; for a change it shall say how many dates in view use it, because they all follow. It shall show no identifiers and no operation names.
 - `AS-13` A proposal may use what it creates — a meal made of a new product, a new plan put on a date — and applying it shall write those first and point everything after them at the identifiers the store assigns.
+- `AS-14` The system shall let the assistant propose syncing a product from Open Food Facts, by the code it was imported under or a barcode the user gives. The application, not the model, shall fetch the entry, both when previewing and again when applying; the product shall keep its name and price, keep any of the four macros the entry lacks, and be linked to the code it was synced from. The preview shall say what each figure changes from and to, and pass on the catalogue's own warnings.
+- `AS-15` The system shall let the user ask a question about their plan — such as how its micronutrients compare with the reference intakes — and shall show the assistant's answer with nothing to apply. The answer shall compare against the EU reference intakes for adults unless the user gives other figures, say which nutrients the products leave unknown, and give no diagnosis or supplement advice.
 
 ### 4.13 Data export and import
 **Description and priority.** Moving all of the user's data in and out of the application as
@@ -376,10 +378,14 @@ comes back. None of the user's own data is sent.
 **The planning assistant (§4.12).** This is the one feature that sends the user's own data
 off the device. It is off until the user turns it on by supplying an API key.
 
-- *What is sent, per question asked:* the request the user typed, and a compact view of the
-  plan around today — the dates in the assistant's window with the labels and amounts on
-  them, their day plans with what they hold, their meals with their servings, their products
-  with macros per 100 g or ml, all with their ids, and their macro targets.
+- *What is sent, per question asked:* the request the user typed, and a view of the plan
+  around today — the dates in the assistant's window with the labels and amounts on them and
+  their nutrient totals, their day plans with what they hold, their meals with their
+  servings, their products with brand, macros and further nutrients per 100 g or ml and
+  whether they came from the catalogue, the categories, all with their ids, and the macro
+  targets.
+- *What a sync sends elsewhere:* the product's code goes to Open Food Facts, as a barcode
+  lookup does; nothing of the user's own goes with it.
 - *What is not sent:* the database, the weigh-ins, the prices, the record of applied
   requests, any identifier of the device or the installation, and anything about dates
   outside that window.

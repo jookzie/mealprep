@@ -28,6 +28,7 @@ const ENTITY_NAMES: Record<EntityKind, string> = {
 	product: 'product',
 	meal: 'meal',
 	'day-plan': 'day plan',
+	targets: 'targets',
 };
 
 /** "New meal" or "Changed product", the heading of one entity in a preview or the log. */
@@ -43,6 +44,8 @@ export function entityHeading(entity: Pick<PreviewEntity, 'kind' | 'action'>): s
  */
 export function entityReach(entity: PreviewEntity): string | null {
 	if (entity.action === 'create') return null;
+	// Every day is measured against the targets, so a count would say nothing.
+	if (entity.kind === 'targets') return null;
 	if (entity.datesUsing === 0) return 'No day in view uses it yet.';
 	const days = entity.datesUsing === 1 ? 'day' : 'days';
 	return `${entity.datesUsing} ${days} in view use it, and all of them follow.`;
@@ -70,6 +73,11 @@ export type PreviewSummary = {
 	pastCount: number;
 	/** True when the assistant proposed nothing that would change anything. */
 	isEmpty: boolean;
+	/**
+	 * True when it proposed nothing and said why — the answer to a question, or why a
+	 * change could not be made. The prose is then the whole of the reply.
+	 */
+	isAnswer: boolean;
 	dates: IsoDate[];
 	/** The one line above Apply and Discard. */
 	label: string;
@@ -95,7 +103,8 @@ export function summarisePreview(preview: Preview, today: IsoDate): PreviewSumma
 	const isEmpty = parts.length === 0;
 	const past = pastCount > 0 ? `, ${pastCount} already past` : '';
 	const label = isEmpty ? 'Nothing would change.' : `${parts.join(' and ')} would change${past}.`;
-	return { entityCount, dayCount, detachCount, pastCount, isEmpty, dates, label };
+	const isAnswer = isEmpty && preview.proposal.rationale.trim() !== '';
+	return { entityCount, dayCount, detachCount, pastCount, isEmpty, isAnswer, dates, label };
 }
 
 /**

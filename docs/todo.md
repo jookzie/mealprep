@@ -145,8 +145,16 @@ Each entry records what happens today, what is deferred, and what would trigger 
   is that a preview is currently about exactly one sentence, which is what makes it readable.
 
 ## Further assistant operations
-- **Today**: six operations — adjust a loose product's amount, add an item, remove an item,
-  swap a meal, assign a plan, clear a plan. Each is bounded to the dates it names.
+- **Today**: six day operations — adjust a loose product's amount, add an item, remove an
+  item, swap a meal, assign a plan, clear a plan — each bounded to the dates it names; and
+  the entity operations, which create a product, meal or day plan, change any field of one
+  or of the targets, or sync a product from the catalogue.
+- **Not offered either**: deleting anything, creating or renaming a category, recording a
+  weigh-in, and syncing a product the user can name but not give a barcode for. The first
+  is a decision the screens make with a confirmation of their own; the weigh-ins are kept
+  out of what is sent (`docs/requirements.md` §5.3); and a sync by name would have to pick
+  one of several catalogue matches for the user, which a search on the product screen does
+  with the candidates in view.
 - **Deferred**: the ones that need a rule rather than a field. Scaling a whole day towards a
   target has to decide what to scale and by how much. Adjusting a product that is inside a
   meal needs a decision about whether the meal is copied for that day, as the plan is. Moving

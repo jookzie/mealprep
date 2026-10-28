@@ -6,6 +6,23 @@ const ISO_DATE: &[BorrowedFormatItem<'_>] = format_description!("[year]-[month]-
 
 time::serde::format_description!(pub(super) iso_date, Date, "[year]-[month]-[day]");
 
+/// A field a patch can leave out, set, or clear: absent is `None`, `null` is `Some(None)`.
+///
+/// Serde reads both absent and `null` as `None` for a plain `Option`, so a patch that has
+/// to tell "keep the brand" from "remove the brand" deserialises through this, with
+/// `#[serde(default)]` supplying the absent case.
+pub(super) mod nullable {
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        Option::<T>::deserialize(deserializer).map(Some)
+    }
+}
+
 /// Parses the given `YYYY-MM-DD` text, the form a date takes at every boundary.
 pub fn parse_iso_date(value: &str) -> Result<Date> {
     Date::parse(value, ISO_DATE).map_err(|source| Error::Invalid {

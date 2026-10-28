@@ -32,7 +32,8 @@
 	const examples = [
 		'next 4 days I have 40 g less whey',
 		'swap tomorrow for a rest day',
-		'new meal: 80 g oats with 30 g whey',
+		'sync my whey from Open Food Facts',
+		'how is my vitamin D against the RDI?',
 	];
 
 	async function saveKey() {
@@ -60,8 +61,9 @@
 		<h2>Turn the assistant on</h2>
 		<p class="small">
 			The assistant reads a plain-language request — "next 4 days I have 40 g less whey", "make a
-			meal of oats and whey" — and proposes the change. It never writes on its own: you see what
-			would change and confirm.
+			meal of oats and whey", "sync my whey from Open Food Facts" — and proposes the change, or
+			answers a question about your plan such as how your micronutrients compare with the
+			reference intakes. It never writes on its own: you see what would change and confirm.
 		</p>
 		<p class="small">
 			It needs your own Anthropic API key. The key is stored on this device and is sent nowhere
@@ -71,10 +73,11 @@
 		<details class="small">
 			<summary>What leaves the device when you ask</summary>
 			<p class="muted">
-				Your request, and a compact view of your planning: the days around today with what is on
-				them, your plans, meals and products with what they hold and their macros, and your
-				targets. Nothing else — no weigh-ins, no prices, no history. Nothing is sent until you ask,
-				and nothing at all while there is no key.
+				Your request, and a view of your planning: the days around today with what is on them and
+				their nutrient totals, your plans, meals and products with what they hold, their macros
+				and nutrients, your categories, and your targets. Nothing else — no weigh-ins, no prices,
+				no history. Nothing is sent until you ask, and nothing at all while there is no key. A sync
+				asks Open Food Facts for the product's barcode, as a scan does.
 			</p>
 		</details>
 		<label class="field">
@@ -96,7 +99,7 @@
 {:else}
 	<section class="card stack">
 		<label class="field">
-			<span>What should change?</span>
+			<span>What should change, or what would you like to know?</span>
 			<textarea
 				rows="3"
 				placeholder="next 4 days I have 40 g less whey"
@@ -123,17 +126,21 @@
 {/if}
 
 {#if preview && summary}
-	<section class="card stack" aria-label="Proposed change">
+	<section class="card stack" aria-label={summary.isAnswer ? 'Answer' : 'Proposed change'}>
 		<div class="row spread">
-			<h2>Proposed change</h2>
-			<span class="pill">Not applied</span>
+			<h2>{summary.isAnswer ? 'Answer' : 'Proposed change'}</h2>
+			{#if !summary.isEmpty}
+				<span class="pill">Not applied</span>
+			{/if}
 		</div>
 		<p class="request small muted">“{preview.proposal.request}”</p>
 		{#if preview.proposal.rationale}
-			<p>{preview.proposal.rationale}</p>
+			<p class="rationale">{preview.proposal.rationale}</p>
 		{/if}
 
-		{#if summary.isEmpty}
+		{#if summary.isAnswer}
+			<!-- The prose is the reply; a hint about naming a product would misread a question. -->
+		{:else if summary.isEmpty}
 			<p class="muted small">
 				{summary.label} Try naming the product, meal or day to change.
 			</p>
@@ -185,9 +192,9 @@
 		{/if}
 
 		<div class="row spread">
-			<span class="small muted">{summary.label}</span>
+			<span class="small muted">{summary.isAnswer ? 'Nothing to apply.' : summary.label}</span>
 			<div class="row">
-				<button onclick={() => assistant.discard()}>Discard</button>
+				<button onclick={() => assistant.discard()}>{summary.isEmpty ? 'Done' : 'Discard'}</button>
 				{#if !summary.isEmpty}
 					<button class="primary" disabled={assistant.applying} onclick={() => assistant.apply()}>
 						Apply
@@ -297,6 +304,11 @@
 
 	.request {
 		font-style: italic;
+	}
+
+	/* An answer comes as short lines and "- " lists, which only read as such kept apart. */
+	.rationale {
+		white-space: pre-line;
 	}
 
 	.entry {

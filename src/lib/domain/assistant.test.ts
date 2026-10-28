@@ -109,6 +109,12 @@ describe('entities', () => {
 			'No day in view uses it yet.',
 		);
 	});
+
+	test('the targets read as targets and claim no reach, since every day is measured against them', () => {
+		const targets = entity({ kind: 'targets', action: 'update', label: 'Daily targets' });
+		expect(entityHeading(targets)).toBe('Changed targets');
+		expect(entityReach(targets)).toBeNull();
+	});
 });
 
 describe('summarisePreview', () => {
@@ -135,6 +141,15 @@ describe('summarisePreview', () => {
 		expect(summary.isEmpty).toBe(true);
 		expect(summary.dayCount).toBe(0);
 		expect(summary.label).toBe('Nothing would change.');
+		// It said why, so the prose is the reply.
+		expect(summary.isAnswer).toBe(true);
+	});
+
+	test('a reply with no prose and nothing to change is not an answer', () => {
+		const silent = preview([]);
+		silent.proposal.rationale = '  ';
+		expect(summarisePreview(silent, '2026-10-20').isAnswer).toBe(false);
+		expect(summarisePreview(preview([day('2026-10-20')]), '2026-10-20').isAnswer).toBe(false);
 	});
 
 	test('counts new and changed things alongside the days', () => {

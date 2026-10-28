@@ -18,8 +18,8 @@ use mealprep_core::{
     Entity, Error, Result,
     domain::{
         AssistantContext, CatalogueEntry, CategoryDraft, CategoryScope, DateRange, DayPlanDraft,
-        DayPlanItem, Macros, MealDraft, Nutrients, Operation, ProductDraft, Proposal, Serving,
-        Unit, parse_iso_date,
+        DayPlanItem, Macros, MealDraft, Nutrients, Operation, ProductDraft, ProductPatch, Proposal,
+        Serving, Unit, parse_iso_date,
     },
     service::Mealprep,
     store::{Assistant, Catalogue},
@@ -186,14 +186,29 @@ async fn products(demo: &Demo) -> Result<Products> {
                 Unit::Millilitre,
                 macros(47.0, 1.6, 3.4, 4.8),
             )
-            .nutrients(&[("saturated-fat", 1.0), ("sugars", 4.8), ("salt", 0.1)])
+            // Label figures, in grams like every nutrient: what a question about calcium or
+            // vitamin D against the reference intakes is answered from.
+            .nutrients(&[
+                ("saturated-fat", 1.0),
+                ("sugars", 4.8),
+                ("salt", 0.1),
+                ("calcium", 0.124),
+                ("potassium", 0.156),
+                ("vitamin-b12", 0.000_000_9),
+            ])
             .cost(0.11),
         )
         .await?,
         banana: create(
             demo,
             draft("Banana", Unit::Gram, macros(89.0, 0.3, 1.1, 22.8))
-                .nutrients(&[("fiber", 2.6), ("sugars", 12.2)])
+                .nutrients(&[
+                    ("fiber", 2.6),
+                    ("sugars", 12.2),
+                    ("potassium", 0.358),
+                    ("magnesium", 0.027),
+                    ("vitamin-c", 0.008_7),
+                ])
                 .cost(0.22),
         )
         .await?,
@@ -215,7 +230,13 @@ async fn products(demo: &Demo) -> Result<Products> {
         broccoli: create(
             demo,
             draft("Broccoli", Unit::Gram, macros(34.0, 0.4, 2.8, 4.4))
-                .nutrients(&[("fiber", 2.6)])
+                .nutrients(&[
+                    ("fiber", 2.6),
+                    ("vitamin-c", 0.089),
+                    ("calcium", 0.047),
+                    ("iron", 0.000_73),
+                    ("potassium", 0.316),
+                ])
                 .cost(0.35),
         )
         .await?,
@@ -228,7 +249,13 @@ async fn products(demo: &Demo) -> Result<Products> {
         .await?,
         eggs: create(
             demo,
-            draft("Eggs", Unit::Gram, macros(143.0, 9.5, 12.6, 0.7)).cost(0.55),
+            draft("Eggs", Unit::Gram, macros(143.0, 9.5, 12.6, 0.7))
+                .nutrients(&[
+                    ("iron", 0.001_75),
+                    ("vitamin-d", 0.000_002),
+                    ("vitamin-b12", 0.000_000_89),
+                ])
+                .cost(0.55),
         )
         .await?,
         bread: create(
@@ -250,7 +277,13 @@ async fn products(demo: &Demo) -> Result<Products> {
         .await?,
         salmon: create(
             demo,
-            draft("Salmon fillet", Unit::Gram, macros(208.0, 13.0, 20.0, 0.0)).cost(2.40),
+            draft("Salmon fillet", Unit::Gram, macros(208.0, 13.0, 20.0, 0.0))
+                .nutrients(&[
+                    ("vitamin-d", 0.000_011),
+                    ("vitamin-b12", 0.000_003_2),
+                    ("potassium", 0.363),
+                ])
+                .cost(2.40),
         )
         .await?,
         sweet_potato: create(
@@ -318,7 +351,12 @@ async fn products(demo: &Demo) -> Result<Products> {
                 macros(45.0, 0.2, 0.7, 10.4),
             )
             .brand("Demo Grove")
-            .nutrients(&[("energy-kj", 450.0), ("sugars", 8.4)])
+            .nutrients(&[
+                ("energy-kj", 450.0),
+                ("sugars", 8.4),
+                ("vitamin-c", 0.05),
+                ("potassium", 0.2),
+            ])
             .cost(0.19),
         )
         .await?,
@@ -712,6 +750,25 @@ async fn assistant(demo: &Demo, plans: &Plans, p: &Products, today: Date) -> Res
         rationale: "Took 40 g off the loose scoop of whey on each of those days, leaving 20 g."
             .to_owned(),
         operations,
+    })
+    .await?;
+
+    // An edit to a product's nutrients rather than its macros, filling in what the label
+    // gives and the form left out.
+    demo.apply_assistant_edit(Proposal {
+        request: "my oats have 4.3 mg iron and 130 mg magnesium per 100 g".to_owned(),
+        rationale: "Added iron and magnesium to your rolled oats.".to_owned(),
+        operations: vec![Operation::UpdateProduct {
+            product_id: p.oats,
+            changes: ProductPatch {
+                nutrients: [
+                    ("iron".to_owned(), Some(0.004_3)),
+                    ("magnesium".to_owned(), Some(0.13)),
+                ]
+                .into(),
+                ..ProductPatch::default()
+            },
+        }],
     })
     .await?;
     Ok(())

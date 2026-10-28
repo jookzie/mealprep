@@ -221,7 +221,11 @@ offers to start over.
   typed set plus a sentence of rationale. `service::assistant` checks every operation against
   the real data — unknown product, impossible amount, out-of-range date are all
   `Error::Invalid` and never a silent fix — builds a preview, and writes only the operations
-  the user confirmed, re-checked from scratch. Both halves matter: a typed operation set means
+  the user confirmed, re-checked from scratch. A sync is the one operation that needs the
+  outside world, so its catalogue entry is fetched before checking starts, on preview and
+  again on apply, and checking stays a function of the data. A question is answered in the
+  prose with no operations, which resolves to an empty preview rather than an error. Both
+  halves matter: a typed operation set means
   the model cannot express an edit the application has no rule for, and the confirmation means
   a wrong answer costs a glance rather than a database. One tool per kind of operation, with
   the schema table in `crates/anthropic` written as a match on `OperationKind`, so a new
@@ -247,7 +251,7 @@ offers to start over.
 - `Category` — name and a scope (meals or day plans) fixed at creation.
 - `CalendarDay` — date → day plan, at most one per date.
 - `Targets` — energy (kcal), fat, protein, carbs. Exactly one row.
-- `Operation` — one typed edit the assistant may propose, each bounded to a `DateRange`: adjust a loose product's amount, add an item, remove an item, swap a meal, assign a plan, clear a plan. `OperationKind` is the same set without the arguments, so an adapter derives its tools from it.
+- `Operation` — one typed edit the assistant may propose. A day edit is bounded to a `DateRange`: adjust a loose product's amount, add an item, remove an item, swap a meal, assign a plan, clear a plan. An entity edit names no date: create a product, meal or day plan, change any of its fields through a patch (`ProductPatch`, `MealPatch`, `DayPlanPatch`, `TargetsPatch`, where `null` clears a field that can be absent), or sync a product from the catalogue. `OperationKind` is the same set without the arguments, so an adapter derives its tools from it.
 - `Proposal` — a request, the model's rationale, and its operations. Unchecked. `Preview` is a checked proposal: one `PreviewDay` per date that would change, carrying the change lines, the day before and after, the deviation from the targets, and whether applying detaches that date.
 - `AssistantRecord` — one applied request: the text, the rationale, the operations, and an `AppliedChange` per date with what it pointed at before. That last field is the undo: re-assign it, or clear the date when there was none.
 - `AssistantKeyStatus` — whether a key is stored and its last four characters. The key itself never crosses the IPC bridge outward.

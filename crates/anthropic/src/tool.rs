@@ -134,6 +134,7 @@ fn schema(kind: OperationKind) -> Value {
                     "type": "object",
                     "properties": {
                         "label": { "type": "string", "description": "What the meal is called." },
+                        "categoryId": category("meal"),
                         "servings": servings(),
                     },
                     "required": ["label", "servings"],
@@ -142,9 +143,10 @@ fn schema(kind: OperationKind) -> Value {
         ),
 
         OperationKind::UpdateMeal => (
-            "Rename a meal or replace what it is made of; leave out what stays. Every day \
-             plan that holds the meal follows, on every date, past ones included. When the \
-             request is about some dates only, edit those dates instead.",
+            "Rename a meal, file it under another category, or replace what it is made of; \
+             leave out what stays. Every day plan that holds the meal follows, on every date, \
+             past ones included. When the request is about some dates only, edit those dates \
+             instead.",
             json!({
                 "mealId": {
                     "type": "string",
@@ -154,6 +156,7 @@ fn schema(kind: OperationKind) -> Value {
                     "type": "object",
                     "properties": {
                         "label": { "type": "string", "description": "The new name." },
+                        "categoryId": nullable_category("meal"),
                         "servings": servings(),
                     },
                 },
@@ -169,6 +172,7 @@ fn schema(kind: OperationKind) -> Value {
                     "type": "object",
                     "properties": {
                         "label": { "type": "string", "description": "What the plan is called." },
+                        "categoryId": category("day plan"),
                         "items": items(),
                     },
                     "required": ["label", "items"],
@@ -177,9 +181,9 @@ fn schema(kind: OperationKind) -> Value {
         ),
 
         OperationKind::UpdateDayPlan => (
-            "Rename a day plan or replace its items; leave out what stays. Every date on \
-             the plan follows, past ones included. When the request is about some dates \
-             only, edit those dates instead.",
+            "Rename a day plan, file it under another category, or replace its items; leave \
+             out what stays. Every date on the plan follows, past ones included. When the \
+             request is about some dates only, edit those dates instead.",
             json!({
                 "dayPlanId": {
                     "type": "string",
@@ -189,7 +193,43 @@ fn schema(kind: OperationKind) -> Value {
                     "type": "object",
                     "properties": {
                         "label": { "type": "string", "description": "The new name." },
+                        "categoryId": nullable_category("day plan"),
                         "items": items(),
+                    },
+                },
+            }),
+        ),
+
+        OperationKind::SyncProduct => (
+            "Replace a product's brand, unit and nutrition figures with Open Food Facts' \
+             current ones; the app fetches them, so give no figures. Its name and price \
+             stay. For \"sync\", \"refresh\" or \"update from online\" requests. A product \
+             whose synced is false was entered by hand and needs the barcode the user gives.",
+            json!({
+                "productId": {
+                    "type": "string",
+                    "description": "The id of the product, from the context's products.",
+                },
+                "code": {
+                    "type": ["string", "null"],
+                    "description": "The barcode to sync from, only when the user gave one; \
+                        null to use the one the product was imported from.",
+                },
+            }),
+        ),
+
+        OperationKind::UpdateTargets => (
+            "Change some of the user's daily targets; leave out what stays. Every day is \
+             measured against them. When none are set yet, give all four.",
+            json!({
+                "changes": {
+                    "type": "object",
+                    "description": "Only the figures that change, per day.",
+                    "properties": {
+                        "energyKcal": { "type": "number" },
+                        "proteinG": { "type": "number" },
+                        "fatG": { "type": "number" },
+                        "carbohydratesG": { "type": "number" },
                     },
                 },
             }),
@@ -260,6 +300,13 @@ fn product() -> Value {
                 },
                 "required": ["energyKcal", "proteinG", "fatG", "carbohydratesG"],
             },
+            "nutrients": {
+                "type": "object",
+                "description": "Further nutrients, only those you can stand behind: grams per 100 of \
+                    the unit, keyed by Open Food Facts name (fiber, salt, sugars, saturated-fat, \
+                    vitamin-c, iron, calcium, …).",
+                "additionalProperties": { "type": "number" },
+            },
             "cost": { "type": "number", "description": "Price per 100 of the unit, only when the user gave one." },
         },
         "required": ["name", "unit", "macros"],
@@ -273,13 +320,50 @@ fn product_patch() -> Value {
         "description": "Only the fields that change.",
         "properties": {
             "name": { "type": "string" },
-            "brand": { "type": "string" },
+            "brand": { "type": ["string", "null"], "description": "null removes it." },
+            "unit": {
+                "type": "string",
+                "enum": ["g", "ml"],
+                "description": "Only to correct a product entered per the wrong unit: every \
+                    amount already served of it is reread in the new one.",
+            },
             "energyKcal": { "type": "number", "description": "Per 100 of the product's unit." },
             "proteinG": { "type": "number", "description": "Per 100 of the product's unit." },
             "fatG": { "type": "number", "description": "Per 100 of the product's unit." },
             "carbohydratesG": { "type": "number", "description": "Per 100 of the product's unit." },
-            "cost": { "type": "number", "description": "Price per 100 of the product's unit." },
+            "cost": {
+                "type": ["number", "null"],
+                "description": "Price per 100 of the product's unit; null removes it.",
+            },
+            "nutrients": {
+                "type": "object",
+                "description": "Only the nutrients beyond the four that change: grams per 100 of the \
+                    unit, keyed as the product keys them or by Open Food Facts name; null removes one.",
+                "additionalProperties": { "type": ["number", "null"] },
+            },
         },
+    })
+}
+
+/// The category a new meal or plan is filed under.
+fn category(what: &str) -> Value {
+    json!({
+        "type": "string",
+        "description": format!(
+            "The id of a {what} category from the context's categories, only when the request \
+             names one."
+        ),
+    })
+}
+
+/// The category an update files a meal or plan under, or takes it out of.
+fn nullable_category(what: &str) -> Value {
+    json!({
+        "type": ["string", "null"],
+        "description": format!(
+            "The id of a {what} category from the context's categories; null takes it out of \
+             the one it is in."
+        ),
     })
 }
 
@@ -369,8 +453,9 @@ mod tests {
             let required = tool["input_schema"]["required"].as_array().unwrap();
             assert_eq!(properties.len(), required.len(), "{}", kind.name());
             // A day edit names dates; an entity edit names none.
-            let entity_edit =
-                kind.name().starts_with("create-") || kind.name().starts_with("update-");
+            let entity_edit = ["create-", "update-", "sync-"]
+                .iter()
+                .any(|prefix| kind.name().starts_with(prefix));
             assert_eq!(
                 properties.contains_key("dates"),
                 !entity_edit,
@@ -484,6 +569,36 @@ mod tests {
                     energy_kcal: Some(400.0),
                     ..ProductPatch::default()
                 },
+            }
+        );
+
+        // A null clears; an absent field keeps.
+        let cleared = operation(
+            "update-product",
+            json!({
+                "productId": product_id,
+                "changes": { "brand": null, "nutrients": { "iron": 0.002, "salt": null } },
+            }),
+        )
+        .unwrap();
+        let Operation::UpdateProduct { changes, .. } = cleared else {
+            panic!("an update-product call is an update");
+        };
+        assert_eq!(changes.brand, Some(None));
+        assert_eq!(changes.cost, None);
+        assert_eq!(changes.nutrients["iron"], Some(0.002));
+        assert_eq!(changes.nutrients["salt"], None);
+
+        let synced = operation(
+            "sync-product",
+            json!({ "productId": product_id, "code": null }),
+        )
+        .unwrap();
+        assert_eq!(
+            synced,
+            Operation::SyncProduct {
+                product_id,
+                code: None
             }
         );
 

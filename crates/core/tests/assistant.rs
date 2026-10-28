@@ -1,6 +1,7 @@
 //! Drives the assistant rules end to end with no database and no model.
 //!
-//! The store is a map in memory and the assistant is a canned answer, so what is under
+//! The store is a map in memory, the catalogue a fixed list and the assistant a canned
+//! answer, so what is under
 //! test is only the rules: that the proposal is checked rather than trusted, that a dated
 //! edit detaches the date it names and nothing else, and that applying records enough to
 //! undo it by hand.
@@ -17,15 +18,16 @@ use std::{
 use mealprep_core::{
     Entity, Error, Result,
     domain::{
-        AssistantContext, AssistantRecord, AssistantRecordDraft, CalendarDay, Category,
-        CategoryDraft, CategoryScope, DateRange, DayPlan, DayPlanDraft, DayPlanItem, EntityAction,
-        EntityKind, ItemRef, Macros, Meal, MealDraft, Nutrients, Operation, Product, ProductDraft,
-        ProductPatch, Proposal, ResolvedDayPlan, ResolvedDayPlanItem, Serving, Targets, Unit,
+        AssistantContext, AssistantRecord, AssistantRecordDraft, CalendarDay, CatalogueEntry,
+        Category, CategoryDraft, CategoryScope, DateRange, DayPlan, DayPlanDraft, DayPlanItem,
+        EntityAction, EntityKind, EntrySource, ItemRef, MacroField, Macros, Meal, MealDraft,
+        MealPatch, Nutrients, Operation, Product, ProductDraft, ProductPatch, Proposal,
+        ResolvedDayPlan, ResolvedDayPlanItem, Serving, Targets, TargetsPatch, Unit,
     },
     service::Mealprep,
     store::{
-        Assistant, AssistantStore, CalendarStore, CategoryStore, DayPlanStore, MealStore,
-        ProductStore, TargetsStore,
+        Assistant, AssistantStore, CalendarStore, Catalogue, CategoryStore, DayPlanStore,
+        MealStore, ProductStore, TargetsStore,
     },
 };
 use time::{Date, Duration, OffsetDateTime};
@@ -62,8 +64,49 @@ impl Assistant for CannedAssistant {
     }
 }
 
+/// The catalogue, as one entry: the whey as Open Food Facts has it now.
+struct FixedCatalogue;
+
+/// The code the catalogue knows the whey by.
+const WHEY_CODE: &str = "5000000000001";
+
+impl Catalogue for FixedCatalogue {
+    async fn search_catalogue(&self, _query: &str) -> Result<Vec<CatalogueEntry>> {
+        Err(unused("search_catalogue"))
+    }
+
+    async fn get_catalogue_entry(&self, code: &str) -> Result<CatalogueEntry> {
+        if code != WHEY_CODE {
+            return Err(Error::NotFound {
+                entity: Entity::CatalogueEntry,
+                id: code.to_owned(),
+            });
+        }
+        Ok(CatalogueEntry {
+            code: code.to_owned(),
+            name: "Whey isolate".to_owned(),
+            unit: Unit::Gram,
+            // Fat is missing from the entry, so it reads as zero here.
+            macros: Macros {
+                energy_kcal: 400.0,
+                fat_g: 0.0,
+                protein_g: 78.0,
+                carbohydrates_g: 8.0,
+            },
+            nutrients: [("calcium".to_owned(), 0.6), ("sodium".to_owned(), 0.2)].into(),
+            brand: Some("Acme".to_owned()),
+            image_url: None,
+            missing_macros: vec![MacroField::FatG],
+            source: EntrySource::Manufacturer,
+            warnings: Vec::new(),
+            modified_at: None,
+        })
+    }
+}
+
 #[derive(Default)]
 struct State {
+    categories: Vec<Category>,
     products: Vec<Product>,
     meals: Vec<Meal>,
     plans: Vec<DayPlan>,
@@ -162,6 +205,20 @@ impl ProductStore for FakeStore {
         Ok(product.clone())
     }
 
+    async fn set_product_source(&self, id: Uuid, source_code: &str) -> Result<()> {
+        let mut state = self.state();
+        let product = state
+            .products
+            .iter_mut()
+            .find(|product| product.id == id)
+            .ok_or_else(|| Error::NotFound {
+                entity: Entity::Product,
+                id: id.to_string(),
+            })?;
+        product.source_code = Some(source_code.to_owned());
+        Ok(())
+    }
+
     async fn delete_product(&self, _id: Uuid) -> Result<()> {
         Err(unused("delete_product"))
     }
@@ -248,8 +305,15 @@ impl CategoryStore for FakeStore {
         Err(unused("get_category"))
     }
 
-    async fn list_categories(&self, _scope: CategoryScope) -> Result<Vec<Category>> {
-        Err(unused("list_categories"))
+    async fn list_categories(&self, scope: CategoryScope) -> Result<Vec<Category>> {
+        let categories = self
+            .state()
+            .categories
+            .iter()
+            .filter(|category| category.scope == scope)
+            .cloned()
+            .collect();
+        Ok(categories)
     }
 
     async fn rename_category(&self, _id: Uuid, _name: &str) -> Result<Category> {
@@ -479,11 +543,12 @@ struct Fixture {
     whey: Uuid,
     shake: Uuid,
     training: Uuid,
+    breakfast: Uuid,
     today: Date,
 }
 
 struct Harness {
-    rules: Mealprep<FakeStore, (), CannedAssistant>,
+    rules: Mealprep<FakeStore, FixedCatalogue, CannedAssistant>,
     fixture: Fixture,
     seen: Seen,
 }
@@ -501,10 +566,17 @@ fn seed(store: &FakeStore) -> Fixture {
             protein_g: 75.0,
             carbohydrates_g: 8.0,
         },
-        nutrients: Nutrients::new(),
+        nutrients: [("calcium".to_owned(), 0.5)].into(),
         cost: Some(2.0),
         brand: None,
         source_code: None,
+        created_at: now(),
+        updated_at: now(),
+    };
+    let breakfast = Category {
+        id: Uuid::new_v4(),
+        name: "Breakfast".to_owned(),
+        scope: CategoryScope::Meal,
         created_at: now(),
         updated_at: now(),
     };
@@ -530,6 +602,7 @@ fn seed(store: &FakeStore) -> Fixture {
     };
 
     let mut state = store.state();
+    state.categories.push(breakfast.clone());
     state.products.push(whey.clone());
     state.meals.push(shake.clone());
     state.plans.push(training.clone());
@@ -555,6 +628,7 @@ fn seed(store: &FakeStore) -> Fixture {
         whey: whey.id,
         shake: shake.id,
         training: training.id,
+        breakfast: breakfast.id,
         today,
     }
 }
@@ -570,7 +644,7 @@ fn harness(operations: impl FnOnce(&Fixture) -> Vec<Operation>) -> Harness {
         seen: seen.clone(),
     };
     Harness {
-        rules: Mealprep::new(store, (), assistant),
+        rules: Mealprep::new(store, FixedCatalogue, assistant),
         fixture,
         seen,
     }
@@ -771,7 +845,7 @@ async fn applying_writes_new_things_with_their_real_ids_and_puts_them_on_dates()
         Operation::UpdateProduct {
             product_id: fixture.whey,
             changes: ProductPatch {
-                cost: Some(2.5),
+                cost: Some(Some(2.5)),
                 ..ProductPatch::default()
             },
         },
@@ -922,6 +996,188 @@ async fn refuses_a_past_date_and_writes_nothing_when_one_operation_fails() {
     let plan = rules.get_day_plan(fixture.training).await.unwrap();
     assert_eq!(loose_amount(&plan, fixture.whey), Some(60.0));
     assert!(rules.list_assistant_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn syncing_takes_the_catalogues_figures_and_links_a_hand_entered_product() {
+    let harness = harness(|_| Vec::new());
+    let (rules, fixture) = (&harness.rules, &harness.fixture);
+    let sync = |code: Option<&str>| {
+        proposal(
+            "sync my whey from open food facts",
+            vec![Operation::SyncProduct {
+                product_id: fixture.whey,
+                code: code.map(str::to_owned),
+            }],
+        )
+    };
+
+    // Entered by hand, so there is nothing to sync from until a barcode is given.
+    let Err(Error::Invalid { reason, .. }) = rules.apply_assistant_edit(sync(None)).await else {
+        panic!("a hand-entered product has no code to sync from");
+    };
+    assert!(reason.contains("barcode"), "{reason}");
+
+    let record = rules
+        .apply_assistant_edit(sync(Some(WHEY_CODE)))
+        .await
+        .unwrap();
+    let lines = &record.entity_changes[0].changes;
+    assert!(
+        lines.iter().any(|line| line.contains(WHEY_CODE)),
+        "{lines:?}"
+    );
+    assert!(lines.contains(&"Brand Acme".to_owned()), "{lines:?}");
+    assert!(
+        lines.contains(&"Energy per 100 g 380 kcal → 400 kcal".to_owned()),
+        "{lines:?}"
+    );
+    assert!(
+        lines.contains(&"Calcium per 100 g 500 mg → 600 mg".to_owned()),
+        "{lines:?}"
+    );
+    assert!(
+        lines.contains(&"Sodium per 100 g 200 mg".to_owned()),
+        "{lines:?}"
+    );
+
+    let whey = rules.get_product(fixture.whey).await.unwrap();
+    assert_eq!(whey.source_code.as_deref(), Some(WHEY_CODE));
+    assert_eq!(whey.name, "Whey", "the name is the user's and stays");
+    assert_eq!(whey.cost, Some(2.0), "so is the price");
+    assert_eq!(whey.macros.protein_g, 78.0);
+    assert_eq!(
+        whey.macros.fat_g, 7.0,
+        "a figure the catalogue lacks is kept"
+    );
+    assert_eq!(whey.nutrients["sodium"], 0.2);
+
+    // Linked now, so the next sync needs no code, and finds nothing left to change.
+    let Err(Error::Invalid { reason, .. }) = rules.apply_assistant_edit(sync(None)).await else {
+        panic!("a product that matches the catalogue has nothing to sync");
+    };
+    assert!(reason.contains("already matches"), "{reason}");
+}
+
+/// One edit to every kind of field an update can now reach, and a day that shows the
+/// targets moving.
+fn every_field(fixture: &Fixture) -> Vec<Operation> {
+    vec![
+        Operation::UpdateProduct {
+            product_id: fixture.whey,
+            changes: ProductPatch {
+                brand: Some(Some("Acme".to_owned())),
+                cost: Some(None),
+                nutrients: [
+                    ("iron".to_owned(), Some(0.002)),
+                    ("calcium".to_owned(), None),
+                ]
+                .into(),
+                ..ProductPatch::default()
+            },
+        },
+        Operation::UpdateMeal {
+            meal_id: fixture.shake,
+            changes: MealPatch {
+                category_id: Some(Some(fixture.breakfast)),
+                ..MealPatch::default()
+            },
+        },
+        Operation::UpdateTargets {
+            changes: TargetsPatch {
+                energy_kcal: Some(2200.0),
+                ..TargetsPatch::default()
+            },
+        },
+        Operation::AddItem {
+            dates: DateRange::just(fixture.today),
+            item: DayPlanItem::Meal {
+                meal_id: fixture.shake,
+            },
+        },
+    ]
+}
+
+#[tokio::test]
+async fn an_update_reaches_every_field_and_null_clears_one() {
+    let harness = harness(every_field);
+    let (rules, fixture) = (&harness.rules, &harness.fixture);
+
+    let preview = rules
+        .propose_assistant_edit("acme whey, no price, 2200 kcal".to_owned())
+        .await
+        .unwrap();
+    let lines: Vec<&str> = preview
+        .entities
+        .iter()
+        .flat_map(|entity| entity.changes.iter().map(String::as_str))
+        .collect();
+    for expected in [
+        "Brand Acme",
+        "Cost removed",
+        "Iron per 100 g 2 mg",
+        "Calcium removed",
+        "Filed under Breakfast",
+        "Energy a day 2000 kcal → 2200 kcal",
+    ] {
+        assert!(lines.contains(&expected), "{expected:?} in {lines:?}");
+    }
+    let targets = preview
+        .entities
+        .iter()
+        .find(|entity| entity.kind == EntityKind::Targets)
+        .unwrap();
+    assert_eq!(targets.label, "Daily targets");
+    // The day reads against the targets the same proposal sets.
+    assert_eq!(preview.targets.unwrap().energy_kcal, 2200.0);
+    let day = &preview.days[0];
+    assert!(
+        (day.target_delta.unwrap().energy_kcal - (day.after.energy_kcal - 2200.0)).abs() < 1e-9
+    );
+
+    rules
+        .apply_assistant_edit(proposal(
+            "acme whey, no price, 2200 kcal",
+            every_field(fixture),
+        ))
+        .await
+        .unwrap();
+    let whey = rules.get_product(fixture.whey).await.unwrap();
+    assert_eq!(whey.brand.as_deref(), Some("Acme"));
+    assert_eq!(whey.cost, None);
+    assert_eq!(whey.nutrients, [("iron".to_owned(), 0.002)].into());
+    let shake = rules.get_meal(fixture.shake).await.unwrap();
+    assert_eq!(shake.entity.category_id, Some(fixture.breakfast));
+    let targets = rules.get_targets().await.unwrap().unwrap();
+    assert_eq!(targets.macros.energy_kcal, 2200.0);
+    assert_eq!(targets.macros.protein_g, 140.0, "a figure left out stays");
+}
+
+#[tokio::test]
+async fn a_question_is_answered_in_prose_from_a_context_that_carries_the_nutrients() {
+    let harness = harness(|_| Vec::new());
+    let (rules, fixture) = (&harness.rules, &harness.fixture);
+
+    let preview = rules
+        .propose_assistant_edit("how much calcium am I getting today".to_owned())
+        .await
+        .unwrap();
+    assert!(preview.entities.is_empty() && preview.days.is_empty());
+    assert!(!preview.proposal.rationale.is_empty());
+
+    let seen = harness.seen.lock().unwrap();
+    let context = &seen[0].2;
+    let today = context
+        .days
+        .iter()
+        .find(|day| day.date == fixture.today)
+        .unwrap();
+    // 60 g of whey at 0.5 g of calcium per 100 g.
+    assert!((today.nutrients["calcium"] - 0.3).abs() < 1e-9, "{today:?}");
+    let whey = &context.products[0];
+    assert_eq!(whey.nutrients["calcium"], 0.5);
+    assert!(!whey.synced, "entered by hand");
+    assert_eq!(context.categories[0].name, "Breakfast");
 }
 
 #[tokio::test]
