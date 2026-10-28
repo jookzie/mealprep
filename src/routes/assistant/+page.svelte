@@ -1,28 +1,23 @@
 <script lang="ts">
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 	import { tick } from 'svelte';
-	import { clearAssistantKey, runMutation, setAssistantKey } from '$lib/api';
+	import { runMutation, setAssistantKey } from '$lib/api';
 	import { assistant } from '$lib/assistant.svelte';
 	import MacroLine from '$lib/components/MacroLine.svelte';
-	import PageHeader from '$lib/components/PageHeader.svelte';
 	import {
-		appliedEntityLine,
 		type ChatMessage,
 		entityHeading,
 		entityReach,
 		isPastDay,
-		recordSummary,
-		reversalHint,
 		summarisePreview,
 	} from '$lib/domain/assistant';
 	import { formatSigned } from '$lib/domain/format';
-	import { dayMonthLabel, fullDateLabel, todayIso, weekdayLabel } from '$lib/domain/week';
+	import { dayMonthLabel, todayIso, weekdayLabel } from '$lib/domain/week';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
 	let keyDraft = $state('');
-	let editingKey = $state(false);
 	let thread = $state<HTMLOListElement>();
 
 	// Read once per visit rather than per render: a day that crosses midnight mid-review
@@ -31,7 +26,7 @@
 
 	const STATUS_LABELS: Record<ChatMessage['status'], string | null> = {
 		asking: null,
-		proposed: 'Not applied',
+		proposed: null,
 		answered: null,
 		applied: 'Applied',
 		discarded: 'Discarded',
@@ -49,73 +44,54 @@
 		const key = keyDraft.trim();
 		if (key === '') return;
 		const status = await runMutation(() => setAssistantKey(key), { success: 'Key saved' });
-		if (status) {
-			keyDraft = '';
-			editingKey = false;
-		}
+		if (status) keyDraft = '';
 	}
-
-	async function forgetKey() {
-		await runMutation(() => clearAssistantKey(), { success: 'Key forgotten' });
-		assistant.clear();
-	}
-
-	const time = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 </script>
 
-<PageHeader title="Assistant" subtitle="Ask about your plan or say what changed">
-	{#snippet actions()}
+<div class="chat">
+	<header class="row spread">
+		<h1>Assistant</h1>
 		{#if data.key.present && assistant.messages.length > 0}
-			<button disabled={assistant.asking} onclick={() => assistant.clear()}>New chat</button>
+			<button class="ghost" disabled={assistant.asking} onclick={() => assistant.clear()}>
+				New chat
+			</button>
 		{/if}
-	{/snippet}
-</PageHeader>
+	</header>
 
-{#if !data.key.present}
-	<section class="card stack">
-		<h2>Turn the assistant on</h2>
-		<p class="small">
-			The assistant is a chat about your plan. Say what changed and it proposes the edit, or ask
-			a question, such as how your micronutrients compare with the reference intakes. It never
-			writes on its own: you see what would change and confirm.
-		</p>
-		<p class="small">
-			It needs your own Anthropic API key. The key is stored on this device and is sent nowhere
-			but to <code>api.anthropic.com</code>, as the header of each message you send.
-		</p>
-		<details class="small">
-			<summary>What leaves the device when you send a message</summary>
-			<p class="muted">
-				Your message and the earlier messages of the chat with their replies, and a view of your
-				planning: the days around today with what is on them and their nutrient totals, your
-				plans, meals and products with what they hold, their macros and nutrients, your
-				categories, and your targets. Nothing else — no weigh-ins, no prices, no history. Nothing
-				is sent until you send, and nothing at all while there is no key. A sync asks Open Food
-				Facts for the product's barcode, as a scan does.
+	{#if !data.key.present}
+		<section class="card stack">
+			<p class="small">
+				Chat about your plan: say what changed and confirm the edit, or ask a question. It needs
+				your own Anthropic API key, stored on this device and sent only to
+				<code>api.anthropic.com</code>.
 			</p>
-		</details>
-		<label class="field">
-			<span>Anthropic API key</span>
-			<input
-				type="password"
-				autocomplete="off"
-				placeholder="sk-ant-…"
-				bind:value={keyDraft}
-				onkeydown={(event) => {
-					if (event.key === 'Enter') saveKey();
-				}}
-			/>
-		</label>
-		<div class="row end">
-			<button class="primary" disabled={keyDraft.trim() === ''} onclick={saveKey}>Save key</button>
-		</div>
-	</section>
-{:else}
-	<section class="chat stack" aria-label="Chat">
+			<details class="small">
+				<summary>What leaves the device</summary>
+				<p class="muted">
+					Your messages in the chat and the assistant's replies, and a view of your planning: the
+					days around today, your plans, meals, products with their nutrients, categories and
+					targets. No weigh-ins, no prices. Nothing is sent while there is no key.
+				</p>
+			</details>
+			<label class="field">
+				<span>Anthropic API key</span>
+				<input
+					type="password"
+					autocomplete="off"
+					placeholder="sk-ant-…"
+					bind:value={keyDraft}
+					onkeydown={(event) => {
+						if (event.key === 'Enter') saveKey();
+					}}
+				/>
+			</label>
+			<div class="row end">
+				<button class="primary" disabled={keyDraft.trim() === ''} onclick={saveKey}>Save key</button>
+			</div>
+		</section>
+	{:else}
 		{#if assistant.messages.length === 0}
-			<p class="empty small">
-				Ask about your plan, or say what changed. Nothing is applied until you confirm it.
-			</p>
+			<p class="empty small">Ask about your plan, or say what changed.</p>
 		{:else}
 			<ol class="thread" bind:this={thread}>
 				{#each assistant.messages as message (message.id)}
@@ -179,32 +155,28 @@
 													</p>
 												{/if}
 												{#if message.status === 'proposed' && isPastDay(day, today)}
-													<p class="small past">
-														This day has already happened. Applying changes what the plan says you
-														ate.
-													</p>
+													<p class="small past">This day has already happened.</p>
 												{/if}
 											</li>
 										{/each}
 									</ol>
 
-									<div class="row spread">
-										<span class="small muted">{summary.label}</span>
-										{#if message.status === 'proposed'}
-											<div class="row">
-												<button onclick={() => assistant.discard(message.id)}>Discard</button>
-												<button
-													class="primary"
-													disabled={assistant.applying}
-													onclick={() => assistant.apply(message.id)}
-												>
-													Apply
-												</button>
-											</div>
-										{:else if status}
+									{#if message.status === 'proposed'}
+										<div class="row end">
+											<button onclick={() => assistant.discard(message.id)}>Discard</button>
+											<button
+												class="primary"
+												disabled={assistant.applying}
+												onclick={() => assistant.apply(message.id)}
+											>
+												Apply
+											</button>
+										</div>
+									{:else if status}
+										<div class="row end">
 											<span class="pill" class:applied={message.status === 'applied'}>{status}</span>
-										{/if}
-									</div>
+										</div>
+									{/if}
 								{/if}
 							</div>
 						{/if}
@@ -243,93 +215,36 @@
 				<ArrowUp size={20} aria-hidden="true" />
 			</button>
 		</form>
-	</section>
-{/if}
-
-<section class="stack" aria-label="What the assistant has done">
-	<h2>History</h2>
-	{#if data.history.length === 0}
-		<p class="empty">Nothing applied yet.</p>
-	{:else}
-		<ul class="list">
-			{#each data.history as record (record.id)}
-				<li class="card stack">
-					<div class="row spread">
-						<strong>“{record.request}”</strong>
-						<span class="small muted">{time.format(new Date(record.createdAt))}</span>
-					</div>
-					{#if record.rationale}
-						<p class="small">{record.rationale}</p>
-					{/if}
-					<span class="small muted">{recordSummary(record)}</span>
-					<details class="small">
-						<summary>What it changed</summary>
-						<ul class="list">
-							{#each record.entityChanges ?? [] as change, index (index)}
-								<li class="stack tight">
-									<strong class="small">{appliedEntityLine(change)}</strong>
-									<ul class="changes muted">
-										{#each change.changes as line, lineIndex (lineIndex)}
-											<li>{line}</li>
-										{/each}
-									</ul>
-								</li>
-							{/each}
-							{#each record.changes as change (change.date)}
-								<li class="stack tight">
-									<strong class="small">{fullDateLabel(change.date)}</strong>
-									<ul class="changes muted">
-										{#each change.changes as line, index (index)}
-											<li>{line}</li>
-										{/each}
-									</ul>
-									<span class="muted">{reversalHint(change)}</span>
-								</li>
-							{/each}
-						</ul>
-					</details>
-				</li>
-			{/each}
-		</ul>
 	{/if}
-</section>
-
-{#if data.key.present}
-	<section class="card stack" aria-label="API key">
-		<div class="row spread">
-			<h2>API key</h2>
-			<span class="pill">…{data.key.hint}</span>
-		</div>
-		<p class="small muted">
-			Stored on this device and sent only to <code>api.anthropic.com</code>. The app never shows
-			it in full.
-		</p>
-		{#if editingKey}
-			<label class="field">
-				<span>Replace it</span>
-				<input type="password" autocomplete="off" placeholder="sk-ant-…" bind:value={keyDraft} />
-			</label>
-			<div class="row end">
-				<button onclick={() => ((editingKey = false), (keyDraft = ''))}>Cancel</button>
-				<button class="primary" disabled={keyDraft.trim() === ''} onclick={saveKey}>Save</button>
-			</div>
-		{:else}
-			<div class="row end">
-				<button onclick={() => (editingKey = true)}>Replace</button>
-				<button class="danger" onclick={forgetKey}>Forget</button>
-			</div>
-		{/if}
-	</section>
-{/if}
+</div>
 
 <style>
+	/* The whole screen is the chat: it fills the space above the tab bar, the thread takes
+	   what is left, and the composer stays at the foot. */
+	.chat {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		min-height: calc(
+			100dvh - env(safe-area-inset-top) - var(--nav-height) - env(safe-area-inset-bottom) - 2.5rem
+		);
+	}
+
 	.thread {
+		flex: 1;
 		list-style: none;
 		margin: 0;
 		padding: 0;
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
+	}
+
+	.empty {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.turn {
@@ -443,10 +358,6 @@
 	   the one thing that is not muted. Warning, not danger: nothing is broken. */
 	.past {
 		color: var(--warning);
-	}
-
-	.tight {
-		gap: 0.2rem;
 	}
 
 	details > summary {

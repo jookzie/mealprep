@@ -104,11 +104,9 @@ export const proposeAssistantEdit = (request: string, history: ChatTurn[]) =>
 /** Applies the operations the user confirmed, which are re-checked before anything is written. */
 export const applyAssistantEdit = (proposal: Proposal) =>
 	call<AssistantRecord>('apply_assistant_edit', { proposal });
-export const listAssistantRequests = () => call<AssistantRecord[]>('list_assistant_requests');
 export const loadAssistantKeyStatus = () => call<AssistantKeyStatus>('assistant_key_status');
 export const setAssistantKey = (key: string) =>
 	call<AssistantKeyStatus>('set_assistant_key', { key });
-export const clearAssistantKey = () => call<void>('clear_assistant_key');
 /*
  * The acceptance environment. One frontend bundle serves both environments, so it cannot
  * be compiled against the Rust `acceptance` feature; it asks whether the command is there

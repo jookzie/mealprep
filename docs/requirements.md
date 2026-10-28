@@ -138,7 +138,7 @@ Nutrients are shown as the four macros, with the full nutrient set behind an exp
 | Calendar | `/calendar` | `CL-1`–`CL-5`, `TG-2`, `TG-3` |
 | Targets | `/targets` | `TG-1`, `WT-6`, `DT-1`–`DT-4` — the macro targets, the weight trend beside them, and exporting or importing the data |
 | Weight | `/weight` | `WT-1`–`WT-7` — quick log, the graph, and the weigh-in history |
-| Assistant | `/assistant` | `AS-1`–`AS-16` — the chat: each request with its preview and Apply or Discard, or the answer to a question; the API key, and what has been applied |
+| Assistant | `/assistant` | `AS-1`–`AS-16` — the whole screen is the chat: each request with its preview and Apply or Discard, or the answer to a question; the API key field only while none is stored |
 
 Creating and editing are screens rather than dialogs, because every write replaces the whole
 entity and so has to start from a fresh read. Dialogs carry what is genuinely one decision:
@@ -331,7 +331,7 @@ and gets a new proposal in its place.
 - `AS-5` The system shall write nothing without an explicit confirmation, shall offer discarding as an equal choice, and shall check the confirmed operations again before applying them.
 - `AS-6` An operation bounded to dates shall change only those dates. Each shall be detached onto its own copy of its assigned day plan before being edited, so no other date assigned the same plan moves; a day-local copy shall not appear in the day plan list or in any picker.
 - `AS-7` The system shall refuse to change a date before today unless the request explicitly and unambiguously names a past day.
-- `AS-8` The system shall record every applied request — what was asked, what the assistant said, the operations, what each date pointed at before, and when — and shall show it. The record shall be enough to reverse the change by hand.
+- `AS-8` The system shall record every applied request — what was asked, what the assistant said, the operations, what each date pointed at before, and when. The record is kept in the database and its export rather than shown on screen, and shall be enough to reverse the change by hand.
 - `AS-9` The system shall require the user's own API key for the assistant, shall keep it on the device, shall never return it in full, and shall send nothing to the assistant while there is none.
 - `AS-10` Adding a kind of operation shall not change how a proposal is previewed, confirmed or applied.
 - `AS-11` The system shall let the assistant propose creating a product, meal or day plan, and changing any field of an existing one or of the targets — a product's name, brand, unit, macros, further nutrients and price, a meal's or plan's name, category and contents — each checked by the same rules the screens' own forms apply. A change to an existing one shall touch only the fields it names, and shall be able to remove a field a product may lack.
@@ -339,7 +339,7 @@ and gets a new proposal in its place.
 - `AS-13` A proposal may use what it creates — a meal made of a new product, a new plan put on a date — and applying it shall write those first and point everything after them at the identifiers the store assigns.
 - `AS-14` The system shall let the assistant propose syncing a product from Open Food Facts, by the code it was imported under or a barcode the user gives. The application, not the model, shall fetch the entry, both when previewing and again when applying; the product shall keep its name and price, keep any of the four macros the entry lacks, and be linked to the code it was synced from. The preview shall say what each figure changes from and to, and pass on the catalogue's own warnings.
 - `AS-15` The system shall let the user ask a question about their plan — such as how its micronutrients compare with the reference intakes — and shall show the assistant's answer with nothing to apply. The answer shall compare against the EU reference intakes for adults unless the user gives other figures, say which nutrients the products leave unknown, and give no diagnosis or supplement advice.
-- `AS-16` The system shall present the assistant as a chat: each request and its reply in order, with the earlier requests and replies of the chat sent with each new one so a request may refer back to them, and with what became of each proposal — applied or discarded — shown on it and told to the assistant. Only the latest proposal can be applied; sending another message discards one still waiting. The chat is held in memory only, can be started over, and checks each request against the stored data on its own words alone (`AS-3`, `AS-7`). The screen shall offer no canned requests.
+- `AS-16` The system shall present the assistant as a chat: each request and its reply in order, with the earlier requests and replies of the chat sent with each new one so a request may refer back to them, and with what became of each proposal — applied or discarded — shown on it and told to the assistant. Only the latest proposal can be applied; sending another message discards one still waiting. The chat is held in memory only, can be started over, and checks each request against the stored data on its own words alone (`AS-3`, `AS-7`). The whole screen shall be the chat, with no canned requests, and replies shall be brief: one sentence for a change, whose details the preview shows, and the figures first for a question.
 
 ### 4.13 Data export and import
 **Description and priority.** Moving all of the user's data in and out of the application as
@@ -398,7 +398,7 @@ off the device. It is off until the user turns it on by supplying an API key.
   user pasted it, and read only to be put in the `x-api-key` header of that one request. No
   command returns it in full: the frontend is given a flag and the last four characters, so
   the user can tell which key is stored without the application handing it back.
-- *How it is switched on and off:* by storing the key, and by forgetting it. With no key
+- *How it is switched on and off:* by storing the key. The screen offers no way to replace or forget it once stored; clearing the app's data does. With no key
   stored the assistant sends nothing at all — the application does not reach the model to
   find out whether it would have worked. The screen says what will leave the device before
   the key is entered rather than after.
