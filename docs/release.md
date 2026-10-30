@@ -19,7 +19,7 @@ nor overwrite the real data.
 
 The acceptance build alone is compiled with the `acceptance` cargo feature, which puts the
 demo dataset in the binary, seeds it when there is no database yet, and adds the **Reset to
-demo data** control at the bottom of the Targets screen — it replaces everything with the
+demo data** control at the bottom of the You screen — it replaces everything with the
 demo dataset and closes the app, which then has to be reopened. A production build contains
 none of that.
 
@@ -71,7 +71,7 @@ built on every push.
 ## The data-safety rules
 
 The database is a private file on the phone, so an uninstall is permanent data loss unless
-an export exists somewhere else. **Your data** on the Targets screen exports it through the
+an export exists somewhere else. **Your data** on the You screen exports it through the
 system file picker — to Downloads, a cloud drive, anywhere the phone offers — and imports a
 file picked the same way. Before an import replaces anything, the current data is kept as
 `mealprep-before-import-<time>.db` in `Android/data/<application id>/files/Download`, which

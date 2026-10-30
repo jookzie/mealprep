@@ -74,7 +74,8 @@ products in one order, meal and day-plan categories, the four-week calendar with
 assignment, targets, derived macros and cost with the incomplete-cost caveat, soft deletes
 and dangling references rendered as removed.
 
-Simplified: layout is a mobile-first bottom-tab shell with plain CSS instead of
+Simplified: layout is a mobile-first four-section shell (Today, Plan, Library, You) with the
+assistant as a sheet, styled with Tailwind v4 tokens instead of
 shadcn-svelte; no command palette, radar chart or column heatmap; list sorting is local
 state rather than a URL parameter.
 

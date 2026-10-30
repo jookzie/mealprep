@@ -81,7 +81,8 @@ descriptor.
 ## Frontend layout
 ```
 src/
-  app.css              the tokens: macro hues, spacing, the light and dark palettes
+  app.css              the tokens: macro hues, ink, radii, the light and dark palettes,
+                       handed to Tailwind v4 by `@theme inline`; base and shared classes
   routes/              one directory per screen: +page.ts reads, +page.svelte renders
   lib/
     api/               the only way the app reaches Rust
@@ -90,19 +91,30 @@ src/
       errors.ts        errorKind, messageOf, read
       mutate.ts        runMutation
     domain/            pure logic: macro arithmetic, week dates, the calendar join,
-                       plausibility, sorting, formatting, the assistant's preview
-                       summaries and reversal hints
+                       plausibility, sorting, formatting, the sections and swipe rules,
+                       the assistant's preview summaries and reversal hints
     components/        forms, pickers, meters, the weight chart, the scan overlay,
-                       the page header
+                       the page header, the tab bar, the Ask sheet, the bottom sheet
     memory.svelte.ts   what the user was in the middle of, kept across screens
     assistant.svelte.ts  the assistant chat: its messages and the proposal waiting on Apply
 ```
 Routes own all I/O. Components take data and callbacks, and never call `invoke`.
 
-The shell is a bottom tab bar in `+layout.svelte`, sized around
-`env(safe-area-inset-bottom)` and hidden while a scan is running. There is no sidebar and no
-command palette: the primary device is a phone. Each tab returns to where its section was
-left; tapping the active tab goes to the top of the section.
+The shell is in `+layout.svelte`: a floating tab bar of four sections — Today, Plan,
+Library, You, declared in `lib/domain/sections.ts` — with the Ask handle above it, sized
+around `env(safe-area-inset-bottom)` and hidden while a scan runs or an editor is open.
+Each tab returns to where its section was left; tapping the active tab goes to the top of the
+section. A sideways swipe on the page goes to the next or previous section and wraps around;
+`classifySwipe` decides what counts as one, and a swipe that starts on something that scrolls
+sideways, on a field, or at the screen's edge (Android's back gesture) is left alone. Changing
+section runs a view transition that slides the way the tabs run, while the tab bar, which has
+a view-transition name of its own, stays put.
+
+The assistant is a sheet rather than a screen. Opening it pushes a shallow history entry
+(`App.PageState.ask`), so the back gesture closes it instead of leaving the page underneath;
+the layout loads whether a key is stored, since the sheet can open anywhere. Every other dialog
+is the same bottom sheet (`Dialog.svelte`), dragged down by its grabber to close. There is no
+sidebar and no command palette: the primary device is a phone.
 
 ## Frontend data flow
 ```
@@ -195,10 +207,15 @@ offers to start over.
 - **Bulk calendar assignment is a sequential loop**: SQLite has one writer.
 - **Open Food Facts over rustls with webpki roots**: no OpenSSL or platform verifier to
   cross-compile or initialise on Android.
-- **Macro colour is identity, not status**: `app.css` fixes one hue per macro and the app
-  never introduces a second colour to mean "over target" — over-target is the same hue under
-  a hatch. Energy is the sum of the other three, so it stays neutral rather than becoming a
-  fourth series. The palette contains no red, because red means broken.
+- **Macro colour is identity, not status**: `app.css` fixes one pastel per macro — protein
+  orange, fat pink, carbs mint — and the app never introduces a second colour to mean "over
+  target": over-target is the same bar under a hatch. Energy is the sum of the other three,
+  so it is the ink-coloured hero card rather than a fourth series, and the ink is also what
+  marks anything interactive. The palette contains no red, because red means broken.
+- **Tailwind for tokens, scoped CSS for components**: Tailwind v4 reads the same CSS variables
+  through `@theme inline`, so utilities and component styles cannot drift apart, and its
+  preflight replaces the hand-written reset. The fonts — Bricolage Grotesque for display, DM
+  Sans for text — are bundled through Fontsource, because the app runs offline.
 - **A meter, not a progress bar**: planned-against-target is a scalar within a known range
   that can legitimately exceed its maximum, which is a meter; a progress bar is monotonic
   task completion.

@@ -96,7 +96,8 @@ settles is settled here. TypeScript in strict mode.
 
 ### Components
 - No component calls `invoke`. Forms take a draft and an `onSubmit`; lists take rows and callbacks. Routes own all I/O.
-- There is no component library. Styling is plain CSS against the tokens in `app.css`; a component that needs a token adds it there rather than hard-coding a value.
+- There is no component library. `app.css` holds the tokens as CSS variables and hands them to Tailwind v4 under the same names; a component styles itself with its own scoped CSS against those variables, or with Tailwind utilities, and never hard-codes a value a token exists for. A component that needs a new token adds it there.
+- The macro colours are `--protein`, `--fat` and `--carbs`, read with `--on-macro`; energy and everything interactive use the ink (`--accent`, `--hero`). A macro colour never marks something tappable, and red (`--danger`) never marks a figure.
 - A component that carries a binding requirement — the Open Food Facts credit, the target meters — is the single place that requirement is implemented, so it cannot be half-applied.
 
 ### State
@@ -112,7 +113,8 @@ settles is settled here. TypeScript in strict mode.
 - Every join can miss, because entities are soft-deleted and then never returned. A join renders the missing case and keeps the id.
 
 ### Layout
-- Mobile first. The shell is a bottom tab bar; there is no sidebar and no keyboard-only affordance.
+- Mobile first. The shell is a floating bottom tab bar of four sections with the Ask handle above it; there is no sidebar and no keyboard-only affordance. A sideways swipe changes section and an upward drag opens Ask, and each has a tap that does the same, because a gesture is never the only way.
+- A row that scrolls sideways (`.chips`) or anything marked `data-swipe-ignore` keeps its own sideways swipes; the section swipe starts only on the rest of the page.
 - Anything anchored to the bottom of the viewport accounts for `env(safe-area-inset-bottom)`.
 - A row that holds a title and actions lets the actions wrap to their own line rather than squeezing the title, because the phone viewport is the narrow case, not the exception.
 

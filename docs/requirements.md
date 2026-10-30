@@ -110,15 +110,21 @@ set their own targets.
 ## 3. External interface requirements
 
 ### 3.1 User interfaces
-A webview UI built from plain CSS with no component library, laid out mobile-first around a
-persistent bottom tab bar. The predecessor's sidebar, command palette and keyboard shortcuts
-are gone: the primary device is a phone, where neither a sidebar nor `⌘K` has a place.
+A webview UI styled with Tailwind v4 tokens and scoped CSS, with no component library, laid
+out mobile-first around a floating bottom tab bar of four sections — Today, Plan (calendar and
+day plans), Library (meals and products) and You (targets, weight, data). A sideways swipe
+moves to the next or previous section and wraps around, so You leads back to Today. The
+assistant is not a section: an **Ask** handle above the tab bar opens it as a sheet over
+whatever is on screen, by a tap or an upward drag, and the back gesture closes it. The
+predecessor's sidebar, command palette and keyboard shortcuts are gone: the primary device is
+a phone, where neither a sidebar nor `⌘K` has a place.
 
 Nutrients are shown as the four macros, with the full nutrient set behind an expansion
 (`PR-9`), ordered as Regulation (EU) 1169/2011 Annex XV presents a nutrition declaration.
 
 | Screen | Path | Serves |
 | --- | --- | --- |
+| Today | `/` | `TG-2`, `TG-3`, `CO-3`, `WT-5` — today's plan against the targets, its items in order, the weight trend, and the six days after it |
 | Product list | `/products` | `PR-10`, `PR-11`, `CO-3` — filter by name or brand, sort by name or any macro |
 | New product | `/products/new` | `PR-3`, `PR-7`, `CO-1`, `PL-1` |
 | Catalogue search | `/products/search` | `PR-1`, `PR-2`, `PR-8`, `SC-3` |
@@ -136,35 +142,43 @@ Nutrients are shown as the four macros, with the full nutrient set behind an exp
 | Day plan detail | `/day-plans/[dayPlanId]` | `DP-4`, `TG-2`, `TG-3`, `CO-2` |
 | Edit day plan | `/day-plans/[dayPlanId]/edit` | `DP-5`, `DP-6` |
 | Calendar | `/calendar` | `CL-1`–`CL-5`, `TG-2`, `TG-3` |
-| Targets | `/targets` | `TG-1`, `WT-6`, `DT-1`–`DT-4` — the macro targets, the weight trend beside them, and exporting or importing the data |
+| You | `/you` | `TG-1`, `WT-6`, `DT-1`–`DT-4`, `AS-9` — the macro targets, the weight trend above them, the categories, the assistant's key, and exporting or importing the data |
 | Weight | `/weight` | `WT-1`–`WT-7` — quick log, the graph, and the weigh-in history |
-| Assistant | `/assistant` | `AS-1`–`AS-16` — the whole screen is the chat: each request with its preview and Apply or Discard, or the answer to a question; the API key field only while none is stored |
+| Ask (sheet) | over any screen | `AS-1`–`AS-16` — the whole sheet is the chat: each request with its preview and Apply or Discard, or the answer to a question; while no key is stored, what would leave the device and the key field instead |
 
 Creating and editing are screens rather than dialogs, because every write replaces the whole
-entity and so has to start from a fresh read. Dialogs carry what is genuinely one decision:
-assigning a plan to a date, applying a plan across weekdays, managing categories, and
-confirming a delete.
+entity and so has to start from a fresh read. An editor takes the whole screen: the tab bar
+and the Ask handle give way to its save bar, and a sideways swipe does not leave it. Dialogs
+carry what is genuinely one decision — assigning a plan to a date, applying a plan across
+weekdays, renaming a category, confirming a delete — and every dialog is a bottom sheet,
+dismissed by dragging it down or by its close button.
 
 **The composition editors** — meals and day plans — share one layout: identity, the ordered
-rows, and the derived total shown as not editable (`ML-3`, `DP-4`). Rows are added by picking
-the item, which creates the row already populated, and are reordered with move-up and
-move-down buttons. Reordering is never drag-only: WCAG 2.2 SC 2.5.7 requires a single-pointer
-alternative to any dragging motion, so buttons are the baseline rather than the fallback.
+rows with the serving size typed inline, and the derived total in the save bar, shown as not
+editable (`ML-3`, `DP-4`). Rows are added by picking the item, which creates the row already
+populated, and are reordered with move-up and move-down buttons. Reordering is never
+drag-only: WCAG 2.2 SC 2.5.7 requires a single-pointer alternative to any dragging motion, so
+buttons are the baseline rather than the fallback.
 
-**The calendar** shows four weeks at a time and pages by the whole block (`CL-5`). An
+**The calendar** shows four weeks at a time as a strip of day pills, pages by the whole block
+(`CL-5`), and opens the picked day as a card with its plan, its figures and its items. An
 unplanned day reads as unplanned and stays out of every denominator, rather than reading as a
 shortfall — the target is a daily figure, so a four-week total cannot be read against it
-directly.
+directly. Applying a plan to several days lists every date it touches before anything is
+written, marked as already on that plan, replaced or newly planned (`CL-4`).
 
 **Planned against target** is drawn as a meter per macro, never a ring: a ring encodes
-0–100% and has no honest way to render 130%, which `TG-3` requires.
+0–100% and has no honest way to render 130%, which `TG-3` requires. Each macro is a block of
+its own colour holding its figure, a bar whose full width is the target, and the share in
+words; over target, the full bar is drawn under a hatch and the share says how far over.
+Energy is the ink-coloured card above the three, with its deviation beside it.
 
-**Colour.** Protein, fat and carbs each carry a fixed hue in every view — Okabe-Ito orange,
-reddish purple and bluish green — held apart far enough to survive the common colour-vision
-deficiencies. Energy stays neutral, because it is the sum of the other three rather than a
-fourth sibling. No macro is red, and no macro uses the interactive accent: red in this
-application always means something is broken, never that a target was exceeded (`TG-3`).
-Colour is never the only channel — every figure is also labelled, and the series order never
+**Colour.** Protein, fat and carbs each own a fixed pastel in every view — orange, pink and
+mint — read with dark text in light and dark mode alike, and every figure is also labelled.
+Energy stays the ink colour, because it is the sum of the other three rather than a fourth
+sibling, and so does everything interactive: no macro colour doubles as "tap here". No macro
+is red: red in this application always means something is broken, never that a target was
+exceeded (`TG-3`), and a figure worth double-checking is yellow. The series order never
 changes.
 
 ### 3.2 Hardware interfaces
@@ -339,7 +353,7 @@ and gets a new proposal in its place.
 - `AS-13` A proposal may use what it creates — a meal made of a new product, a new plan put on a date — and applying it shall write those first and point everything after them at the identifiers the store assigns.
 - `AS-14` The system shall let the assistant propose syncing a product from Open Food Facts, by the code it was imported under or a barcode the user gives. The application, not the model, shall fetch the entry, both when previewing and again when applying; the product shall keep its name and price, keep any of the four macros the entry lacks, and be linked to the code it was synced from. The preview shall say what each figure changes from and to, and pass on the catalogue's own warnings.
 - `AS-15` The system shall let the user ask a question about their plan — such as how its micronutrients compare with the reference intakes — and shall show the assistant's answer with nothing to apply. The answer shall compare against the EU reference intakes for adults unless the user gives other figures, say which nutrients the products leave unknown, and give no diagnosis or supplement advice.
-- `AS-16` The system shall present the assistant as a chat: each request and its reply in order, with the earlier requests and replies of the chat sent with each new one so a request may refer back to them, and with what became of each proposal — applied or discarded — shown on it and told to the assistant. Only the latest proposal can be applied; sending another message discards one still waiting. The chat is held in memory only, can be started over, and checks each request against the stored data on its own words alone (`AS-3`, `AS-7`). The whole screen shall be the chat, with no canned requests, and replies shall be brief: one sentence for a change, whose details the preview shows, and the figures first for a question.
+- `AS-16` The system shall present the assistant as a chat: each request and its reply in order, with the earlier requests and replies of the chat sent with each new one so a request may refer back to them, and with what became of each proposal — applied or discarded — shown on it and told to the assistant. Only the latest proposal can be applied; sending another message discards one still waiting. The chat is held in memory only, can be started over, and checks each request against the stored data on its own words alone (`AS-3`, `AS-7`). The whole sheet shall be the chat, with no canned requests, and replies shall be brief: one sentence for a change, whose details the preview shows, and the figures first for a question.
 
 ### 4.13 Data export and import
 **Description and priority.** Moving all of the user's data in and out of the application as

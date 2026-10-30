@@ -15,7 +15,7 @@ mise run android:db:push -- demo/mealprep-demo.db   # load it into the debug ins
 
 The acceptance release build also ships this file: it is compiled into the binary and
 written into the app data directory on first launch, so that install starts from this
-dataset rather than empty, and Targets → **Reset to demo data** puts it back. See
+dataset rather than empty, and You → **Reset to demo data** puts it back. See
 `docs/release.md`. A rebuild of this file therefore changes what the next acceptance build
 starts from.
 
@@ -64,15 +64,15 @@ only when the data itself changed.
 | Day plan: loose products only | Travel day | Six products, no meals |
 | Deleted meal drops out of a plan | Lazy Sunday | "Old smoothie" was its second item |
 | Deleted product stays as removed | Lazy Sunday | Protein bar, 60 g |
-| Targets and the meters | Targets, and any plan | 2000 kcal, 65 g fat, 140 g protein, 220 g carbohydrates |
+| Targets and the meters | You, Today, and any plan | 2000 kcal, 65 g fat, 140 g protein, 220 g carbohydrates |
 | Over target (the hatch) | Training day A, and days it is on | Over on energy, protein and carbohydrates |
 | Calendar, four weeks | Calendar | Two weeks back to three ahead planned; the current view and the one before both have days |
 | Partly planned week | Calendar, last week of the view | Monday to Wednesday only |
 | Unplanned days | Calendar | Every other Saturday, and the Wednesday of next week (assigned, then cleared) |
 | Date whose plan was deleted | Calendar, tomorrow | "Old cutting plan", deleted; reads as unplanned |
-| Weight trend and rate | Targets → Weight | Ten weeks ending today, losing about 0.4 kg a week |
+| Weight trend and rate | You → Weight, and Today | Ten weeks ending today, losing about 0.4 kg a week |
 | Skipped weigh-ins | Weight chart | Every few days, and ten days away with no scale |
-| Assistant with no key: the empty state | Assistant | No key is seeded, so the screen asks for one and says what would leave the device |
+| Assistant with no key: the empty state | Ask (the handle above the tab bar) | No key is seeded, so the sheet asks for one and says what would leave the device |
 | A product an assistant request can adjust | Training day A and B | 60 g of whey as an item of the day's own order, not inside a meal |
 | An applied assistant request | `assistant_requests` (not shown on screen) | "the next few training days I have 40 g less whey", three days changed |
 | The log is enough to undo by hand | `assistant_requests` | Each date says what it pointed at before, by label and id |
@@ -81,12 +81,12 @@ only when the data itself changed.
 | A product the assistant can sync | Products → Whey protein, vanilla, and the other imports | Imported, so it carries a code; the codes are fictional, so a sync needs a real barcode given in the request |
 | Copy-on-write per date | Calendar, the next few training days | Three days on their own copy of Training day A, with 20 g of whey |
 | The past is unmoved by an edit ahead | Calendar, the training days already past | Still on the original Training day A, with its 60 g |
-| Day-local copies stay out of the lists | Day plans, and the assign dialog | Six plans; the three copies appear in neither |
+| Day-local copies stay out of the lists | Day plans, and the assign sheet | Six plans; the three copies appear in neither |
 
 The catalogue itself is not seeded: search, barcode lookup and the import review read Open
 Food Facts live, so they need a network and not this file.
 
-No API key is seeded either, so the assistant shows its empty state and sends nothing. The
+No API key is seeded either, so the Ask sheet shows its empty state and sends nothing. The
 one applied request in the file was applied rather than proposed — applying needs no key,
 proposing does — so the states it leaves behind are all there to look at, and asking a new
 question needs a key of your own.
