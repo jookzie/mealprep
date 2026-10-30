@@ -1,8 +1,11 @@
 <script lang="ts">
+	import Plus from '@lucide/svelte/icons/plus';
 	import CostFigure from '$lib/components/CostFigure.svelte';
+	import LibraryTools from '$lib/components/LibraryTools.svelte';
 	import MacroLine from '$lib/components/MacroLine.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import { categoryName } from '$lib/domain/category';
+	import SectionSwitch from '$lib/components/SectionSwitch.svelte';
+	import { categoryName, REMOVED_KEY, UNCATEGORISED_KEY } from '$lib/domain/category';
 	import { nextSort, type SortKey, sortRows } from '$lib/domain/sort';
 	import { keep } from '$lib/memory.svelte';
 	import type { PageProps } from './$types';
@@ -11,23 +14,34 @@
 
 	const query = keep('meals:query', '');
 	const sort = keep('meals:sort', nextSort({ key: 'energyKcal', direction: 'asc' }, 'name'));
+	const category = keep<string>('meals:category', 'all');
 
-	// The meal list is a table-shaped list, so its category is one more sort.value key and one
-	// more thing the filter matches, rather than a heading.
+	const known = $derived(new Set(data.categories.map((entry) => entry.id)));
+
+	function inCategory(categoryId: string | undefined): boolean {
+		if (category.value === 'all') return true;
+		if (category.value === UNCATEGORISED_KEY) return categoryId === undefined;
+		if (category.value === REMOVED_KEY) return categoryId !== undefined && !known.has(categoryId);
+		return categoryId === category.value;
+	}
+
+	// The category is a chip to narrow by and one more sort key, rather than a heading.
 	const rows = $derived.by(() => {
 		const needle = query.value.trim().toLowerCase();
 		const named = data.meals.map((meal) => ({
 			...meal,
 			categoryName: categoryName(meal, data.categories),
 		}));
-		const matching = named.filter((meal) =>
-			`${meal.label} ${meal.categoryName ?? ''}`.toLowerCase().includes(needle),
+		const matching = named.filter(
+			(meal) =>
+				inCategory(meal.categoryId) &&
+				`${meal.label} ${meal.categoryName ?? ''}`.toLowerCase().includes(needle),
 		);
 		return sortRows(matching, sort.value);
 	});
 
 	const SORTS: { key: SortKey; label: string }[] = [
-		{ key: 'name', label: 'Label' },
+		{ key: 'name', label: 'Name' },
 		{ key: 'category', label: 'Category' },
 		{ key: 'energyKcal', label: 'Energy' },
 		{ key: 'proteinG', label: 'Protein' },
@@ -36,31 +50,42 @@
 	];
 </script>
 
-<PageHeader title="Meals">
+<PageHeader title="Library">
 	{#snippet actions()}
-		<a class="button" href="/meals/categories">Categories</a>
-		<a class="button primary" href="/meals/new">New</a>
+		<a class="button primary" href="/meals/new">
+			<Plus size={18} strokeWidth={2.6} aria-hidden="true" />
+			New meal
+		</a>
 	{/snippet}
 </PageHeader>
 
-<div class="row">
-	<input class="grow" type="search" placeholder="Filter by label or category" bind:value={query.value} />
-	<select
-		class="sort"
-		aria-label="Sort by"
-		value={sort.value.key}
-		onchange={(event) => (sort.value = nextSort(sort.value, event.currentTarget.value as SortKey))}
-	>
-		{#each SORTS as option (option.key)}
-			<option value={option.key}>{option.label}</option>
+<SectionSwitch
+	label="Library"
+	current="/meals"
+	links={[
+		{ href: '/meals', label: `Meals · ${data.meals.length}` },
+		{ href: '/products', label: 'Products' },
+	]}
+/>
+
+<LibraryTools placeholder="Search meals" sorts={SORTS} bind:query={query.value} bind:sort={sort.value} />
+
+{#if data.categories.length > 0}
+	<div class="chips" role="group" aria-label="Category">
+		<button class="chip" aria-pressed={category.value === 'all'} onclick={() => (category.value = 'all')}>All</button>
+		{#each data.categories as entry (entry.id)}
+			<button class="chip" aria-pressed={category.value === entry.id} onclick={() => (category.value = entry.id)}
+				>{entry.name}</button
+			>
 		{/each}
-	</select>
-	<button
-		class="icon"
-		aria-label="Reverse order"
-		onclick={() => (sort.value = nextSort(sort.value, sort.value.key))}>{sort.value.direction === 'asc' ? '↑' : '↓'}</button
-	>
-</div>
+		<button
+			class="chip"
+			aria-pressed={category.value === UNCATEGORISED_KEY}
+			onclick={() => (category.value = UNCATEGORISED_KEY)}>None</button
+		>
+		<a class="chip button manage" href="/meals/categories">Edit categories</a>
+	</div>
+{/if}
 
 {#if data.meals.length === 0}
 	<p class="empty">No meals yet. A meal is products with serving sizes.</p>
@@ -70,14 +95,17 @@
 	<ul class="list">
 		{#each rows as meal (meal.id)}
 			<li>
-				<a class="card list-link stack" href="/meals/{meal.id}">
-					<div class="row spread">
+				<a class="card list-link entry" href="/meals/{meal.id}">
+					<div class="row spread top">
 						<strong class="grow truncate">{meal.label}</strong>
-						{#if meal.categoryName}<span class="pill">{meal.categoryName}</span>{/if}
+						<span class="display kcal figure">{Math.round(meal.macros.energyKcal)}<small> kcal</small></span>
 					</div>
 					<div class="row spread">
-						<MacroLine macros={meal.macros} />
-						<CostFigure cost={meal.cost} />
+						<MacroLine macros={meal.macros} energy={false} />
+						<span class="row meta">
+							{#if meal.categoryName}<span class="muted small strong">{meal.categoryName}</span>{/if}
+							<CostFigure cost={meal.cost} />
+						</span>
 					</div>
 				</a>
 			</li>
@@ -86,7 +114,38 @@
 {/if}
 
 <style>
-	.sort {
-		width: auto;
+	.entry {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.top {
+		flex-wrap: nowrap;
+		align-items: baseline;
+	}
+
+	.kcal {
+		font-size: 1.15rem;
+		white-space: nowrap;
+	}
+
+	.kcal small {
+		font-family: var(--font-body);
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+
+	.meta {
+		gap: 0.5rem;
+	}
+
+	.strong {
+		font-weight: 700;
+	}
+
+	.manage {
+		background: transparent;
+		border: 2px dashed var(--border);
 	}
 </style>

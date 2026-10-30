@@ -5,6 +5,8 @@
 	import { scanner } from '$lib/scanner.svelte';
 	import { toasts } from '$lib/toasts.svelte';
 
+	let { compact = false }: { compact?: boolean } = $props();
+
 	async function start() {
 		try {
 			const code = await scanner.scan();
@@ -17,8 +19,27 @@
 
 <!-- Only phones have a camera to scan with; elsewhere the button is simply absent. -->
 {#if scanner.available}
-	<button type="button" onclick={start} disabled={scanner.active}>
-		<ScanBarcode size={18} aria-hidden="true" />
-		Scan
+	<button
+		type="button"
+		class="scan"
+		class:icon={compact}
+		onclick={start}
+		disabled={scanner.active}
+		aria-label={compact ? 'Scan a barcode' : undefined}
+	>
+		<ScanBarcode size={20} strokeWidth={2.4} aria-hidden="true" />
+		{#if !compact}Scan{/if}
 	</button>
 {/if}
+
+<style>
+	.scan {
+		background: var(--protein);
+		color: var(--on-macro);
+	}
+
+	.icon {
+		width: 48px;
+		height: 48px;
+	}
+</style>

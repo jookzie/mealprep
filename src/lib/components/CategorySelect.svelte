@@ -12,21 +12,37 @@
 	);
 </script>
 
-<label class="field">
-	<span>Category</span>
-	<select
-		value={value ?? ''}
-		onchange={(event) => {
-			const selected = event.currentTarget.value;
-			value = selected === '' ? undefined : selected;
-		}}
-	>
-		<option value="">Uncategorised</option>
+<!-- A handful of categories at most, so they are all on show as chips rather than in a menu. -->
+<fieldset class="field">
+	<legend>Category</legend>
+	<div class="chips">
+		<button type="button" class="chip" aria-pressed={value === undefined} onclick={() => (value = undefined)}>
+			None
+		</button>
 		{#if removed}
-			<option value={value}>{REMOVED_LABEL}</option>
+			<button type="button" class="chip" aria-pressed="true">{REMOVED_LABEL}</button>
 		{/if}
 		{#each categories as category (category.id)}
-			<option value={category.id}>{category.name}</option>
+			<button
+				type="button"
+				class="chip"
+				aria-pressed={value === category.id}
+				onclick={() => (value = category.id)}>{category.name}</button
+			>
 		{/each}
-	</select>
-</label>
+	</div>
+</fieldset>
+
+<style>
+	legend {
+		font-weight: 700;
+		font-size: 0.85rem;
+		margin-bottom: 0.3rem;
+	}
+
+	.chip[aria-pressed='true'] {
+		background: var(--fat);
+		color: var(--on-macro);
+		border-color: var(--on-macro);
+	}
+</style>

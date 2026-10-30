@@ -1,15 +1,18 @@
 <script lang="ts">
 	import type { Macros } from '$lib/api';
-	import { formatGrams, formatKcal } from '$lib/domain/format';
+	import { formatKcal } from '$lib/domain/format';
 
-	let { macros }: { macros: Macros } = $props();
+	let { macros, energy = true }: { macros: Macros; energy?: boolean } = $props();
+
+	const whole = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 </script>
 
+<!-- One line of figures: energy in ink, then a tag per macro in its own pastel. -->
 <span class="macro-line">
-	<strong>{formatKcal(macros.energyKcal)}</strong>
-	<span><i style:background="var(--protein)"></i>P {formatGrams(macros.proteinG)}</span>
-	<span><i style:background="var(--fat)"></i>F {formatGrams(macros.fatG)}</span>
-	<span><i style:background="var(--carbs)"></i>C {formatGrams(macros.carbohydratesG)}</span>
+	{#if energy}<strong>{formatKcal(macros.energyKcal)}</strong>{/if}
+	<span class="tag protein" title="Protein">P {whole.format(macros.proteinG)}</span>
+	<span class="tag fat" title="Fat">F {whole.format(macros.fatG)}</span>
+	<span class="tag carbs" title="Carbohydrates">C {whole.format(macros.carbohydratesG)}</span>
 </span>
 
 <style>
@@ -17,16 +20,32 @@
 		display: inline-flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.2rem 0.7rem;
-		font-size: 0.85rem;
+		gap: 0.3rem 0.4rem;
+		font-size: 0.8rem;
 		font-variant-numeric: tabular-nums;
 	}
 
-	i {
-		display: inline-block;
-		width: 0.55rem;
-		height: 0.55rem;
-		border-radius: 50%;
-		margin-right: 0.25rem;
+	strong {
+		margin-right: 0.2rem;
+		font-size: 0.875rem;
+	}
+
+	.tag {
+		font-weight: 700;
+		padding: 0.1rem 0.5rem;
+		border-radius: 8px;
+		color: var(--on-macro);
+	}
+
+	.protein {
+		background: var(--protein);
+	}
+
+	.fat {
+		background: var(--fat);
+	}
+
+	.carbs {
+		background: var(--carbs);
 	}
 </style>

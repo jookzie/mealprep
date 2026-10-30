@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { CalendarDay, DayPlan, Macros, Targets } from '../api/types';
-import { buildPlannedPeriod, buildPlannedWeek } from './calendar';
+import { assignmentEffects, buildPlannedPeriod, buildPlannedWeek, plannedDays } from './calendar';
 import { ZERO_COST } from './cost';
 import { ZERO_MACROS } from './macros';
 
@@ -256,4 +256,25 @@ describe('cost', () => {
 		expect(empty.averageCostPerPlannedDay).toBeNull();
 		expect(empty.totalCost).toEqual(ZERO_COST);
 	});
+});
+
+test('plannedDays keeps the order of the dates it was given', () => {
+	const days = plannedDays(
+		['2026-09-03', '2026-09-01'],
+		[assignment('2026-09-01', 'a'), assignment('2026-09-03', 'gone')],
+		[plan('a', 1800)],
+	);
+	expect(days.map((day) => day.date)).toEqual(['2026-09-03', '2026-09-01']);
+	expect(days[0].dayPlan).toBeNull();
+	expect(days[0].dayPlanId).toBe('gone');
+	expect(days[1].dayPlan?.id).toBe('a');
+});
+
+test('assignmentEffects names what a bulk assignment does to each date', () => {
+	const effects = assignmentEffects(
+		['2026-09-01', '2026-09-02', '2026-09-03'],
+		[assignment('2026-09-01', 'a'), assignment('2026-09-02', 'b')],
+		'a',
+	);
+	expect(effects.map((entry) => entry.effect)).toEqual(['same', 'replace', 'new']);
 });

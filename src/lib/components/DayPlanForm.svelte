@@ -31,10 +31,9 @@
 	import Dialog from './Dialog.svelte';
 	import DraftNotice from './DraftNotice.svelte';
 	import GroupedPicker from './GroupedPicker.svelte';
-	import MacroLine from './MacroLine.svelte';
+	import AmountField from './AmountField.svelte';
 	import MacroMeters from './MacroMeters.svelte';
 	import MoveButtons from './MoveButtons.svelte';
-	import NumberField from './NumberField.svelte';
 	import ProductPicker from './ProductPicker.svelte';
 
 	let {
@@ -152,86 +151,85 @@
 	}
 </script>
 
-<form class="stack" onsubmit={submit}>
+<form class="stack editor" onsubmit={submit}>
 	{#if restored}
 		<DraftNotice onStartOver={startOver} />
 	{/if}
 
-	<section class="card stack">
-		<label class="field">
-			<span>Label</span>
-			<input bind:value={form.label} required />
-		</label>
-		<CategorySelect {categories} bind:value={form.categoryId} />
-	</section>
+	<label class="field">
+		<span>Name</span>
+		<input class="title-input" bind:value={form.label} required />
+	</label>
+	<CategorySelect {categories} bind:value={form.categoryId} />
 
-	<section class="card stack">
-		<div class="row spread">
-			<h2>What is eaten, in order</h2>
-		</div>
-		{#if form.rows.length === 0}
-			<p class="empty">Nothing yet.</p>
-		{:else}
-			<ul class="list">
-				{#each form.rows as row, index (row.key)}
-					{@const shown = computed[index]}
-					<li class="stack entry">
-						<div class="row spread">
-							<div class="grow">
-								<strong class="truncate">{shown?.name}</strong>
-								<p class="muted small">{row.kind === 'meal' ? 'Meal' : 'Product'}</p>
-							</div>
-							<MoveButtons
-								{index}
-								length={form.rows.length}
-								name={shown?.name ?? 'item'}
-								onMove={(from, to) => (form.rows = move(form.rows, from, to))}
-								onRemove={() => form.rows.splice(index, 1)}
-							/>
-						</div>
-						{#if row.kind === 'product'}
-							<NumberField
-								label="Amount"
-								suffix={productsById.get(row.productId)?.unit ?? 'g'}
-								bind:value={row.amount}
-								required
-							/>
-						{/if}
-						{#if shown}
-							<MacroLine macros={shown.macros} />
-						{/if}
-					</li>
-				{/each}
-			</ul>
-		{/if}
+	<div class="row spread">
+		<h2>The day, in order</h2>
 		<div class="row">
-			<button type="button" onclick={() => (pickingMeal = true)}>Add meal</button>
-			<button type="button" onclick={() => (pickingProduct = true)}>Add product</button>
+			<button type="button" class="outline compact" onclick={() => (pickingMeal = true)}>+ Meal</button>
+			<button type="button" class="outline compact" onclick={() => (pickingProduct = true)}>+ Product</button>
 		</div>
+	</div>
+	{#if form.rows.length === 0}
+		<p class="empty">Nothing yet. Add the meals and loose products this day is eaten in.</p>
+	{:else}
+		<ol class="editor-rows">
+			{#each form.rows as row, index (row.key)}
+				{@const shown = computed[index]}
+				<li class="editor-row" class:product={row.kind === 'product'}>
+					<div class="grow">
+						<strong class="truncate">{shown?.name}</strong>
+						<span class="detail">
+							{row.kind === 'meal' ? 'Meal' : 'Product'} · {Math.round(shown?.macros.energyKcal ?? 0)} kcal
+						</span>
+					</div>
+					{#if row.kind === 'product'}
+						<AmountField
+							label="Amount of {shown?.name ?? 'product'}"
+							unit={productsById.get(row.productId)?.unit ?? 'g'}
+							bind:value={row.amount}
+						/>
+					{/if}
+					<MoveButtons
+						{index}
+						length={form.rows.length}
+						name={shown?.name ?? 'item'}
+						onMove={(from, to) => (form.rows = move(form.rows, from, to))}
+						onRemove={() => form.rows.splice(index, 1)}
+					/>
+				</li>
+			{/each}
+		</ol>
+	{/if}
+
+	<section class="stack" aria-label="Calculated totals">
+		<h2>Against targets</h2>
+		<MacroMeters actual={totalMacros} target={targets?.macros ?? null} caption="kcal, calculated" />
 	</section>
 
-	<section class="card stack" aria-label="Calculated totals">
-		<h2>Calculated</h2>
-		<MacroMeters actual={totalMacros} target={targets?.macros ?? null} />
-		<CostFigure cost={totalCost} label="Cost" />
-	</section>
-
-	<div class="row end">
-		<button class="primary" type="submit" disabled={!valid || busy}>{submitLabel}</button>
+	<div class="save-bar">
+		<div class="grow totals">
+			<span class="display">{Math.round(totalMacros.energyKcal)} kcal</span>
+			<CostFigure cost={totalCost} label="Cost" />
+		</div>
+		<button class="confirm" type="submit" disabled={!valid || busy}>{submitLabel}</button>
 	</div>
 </form>
 
-<Dialog bind:open={pickingMeal} title="Add a meal">
+<Dialog bind:open={pickingMeal} title="Add a meal" tall>
 	<GroupedPicker items={meals} categories={mealCategories} placeholder="Filter meals" onPick={addMeal} />
 </Dialog>
 
-<Dialog bind:open={pickingProduct} title="Add a product">
+<Dialog bind:open={pickingProduct} title="Add a product" tall>
 	<ProductPicker {products} onPick={addProduct} />
 </Dialog>
 
 <style>
-	.entry + .entry {
-		border-top: 1px solid var(--border);
-		padding-top: 0.75rem;
+	.editor {
+		gap: 1rem;
+	}
+
+	/* A loose product reads apart from a meal at a glance: it is the row with a figure to type. */
+	.product {
+		background: color-mix(in srgb, var(--protein) 28%, var(--surface));
 	}
 </style>

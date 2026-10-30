@@ -8,7 +8,7 @@
 	let { data }: PageProps = $props();
 </script>
 
-<PageHeader title="Meal categories" back="/meals" />
+<PageHeader title="Meal categories" back="/meals" backLabel="Library" />
 
 <CategoryManager
 	categories={data.categories}

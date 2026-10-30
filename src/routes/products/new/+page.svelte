@@ -7,7 +7,7 @@
 	const draft = $derived(keepDraft<ProductFormState>('product:new'));
 </script>
 
-<PageHeader title="New product" back="/products" />
+<PageHeader title="New product" back="/products" backLabel="Library" />
 
 <ProductForm
 	{draft}

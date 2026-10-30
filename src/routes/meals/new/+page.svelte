@@ -11,7 +11,7 @@
 	const draft = $derived(keepDraft<MealFormState>('meal:new'));
 </script>
 
-<PageHeader title="New meal" back="/meals" />
+<PageHeader title="New meal" back="/meals" backLabel="Library" />
 
 <MealForm
 	initial={emptyMealDraft()}

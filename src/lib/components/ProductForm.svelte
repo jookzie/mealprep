@@ -16,6 +16,7 @@
 </script>
 
 <script lang="ts">
+	import X from '@lucide/svelte/icons/x';
 	import { untrack } from 'svelte';
 	import type { ProductDraft } from '$lib/api';
 	import type { ProductSeed } from '$lib/domain/catalogue';
@@ -121,44 +122,57 @@
 	}
 </script>
 
-<form class="stack" onsubmit={submit}>
+<form class="stack editor" onsubmit={submit}>
 	{#if restored}
 		<DraftNotice onStartOver={startOver} />
 	{/if}
 
-	<section class="card stack">
-		<label class="field">
-			<span>Name</span>
-			<input bind:value={form.name} required />
-		</label>
-		<label class="field">
+	<label class="field">
+		<span>Name</span>
+		<input class="title-input" bind:value={form.name} required />
+	</label>
+	<div class="row identity">
+		<label class="field grow">
 			<span>Brand (optional)</span>
 			<input bind:value={form.brand} />
 		</label>
-		<label class="field">
-			<span>Figures are per 100</span>
-			<select bind:value={form.unit}>
-				<option value="g">grams</option>
-				<option value="ml">millilitres</option>
-			</select>
-		</label>
-	</section>
-
-	<section class="card stack">
-		<h2>Per 100 {form.unit}</h2>
-		<div class="grid-2">
-			<NumberField label="Energy" suffix="kcal" bind:value={form.energyKcal} required />
-			<NumberField label="Protein" suffix="g" bind:value={form.proteinG} required />
-			<NumberField label="Fat" suffix="g" bind:value={form.fatG} required />
-			<NumberField label="Carbs" suffix="g" bind:value={form.carbohydratesG} required />
+		<div class="field">
+			<span id="unit-label">Per 100</span>
+			<div class="segmented unit" role="radiogroup" aria-labelledby="unit-label">
+				<button type="button" role="radio" aria-checked={form.unit === 'g'} onclick={() => (form.unit = 'g')}
+					>g</button
+				>
+				<button type="button" role="radio" aria-checked={form.unit === 'ml'} onclick={() => (form.unit = 'ml')}
+					>ml</button
+				>
+			</div>
 		</div>
-		<NumberField label="Cost per 100 {form.unit}" suffix="optional" bind:value={form.cost} />
-	</section>
+	</div>
+
+	<h2>Per 100 {form.unit}</h2>
+	<div class="grid-2">
+		<NumberField label="Energy" suffix="kcal" tone="hero" bind:value={form.energyKcal} required />
+		<NumberField label="Protein" suffix="g" tone="protein" bind:value={form.proteinG} required />
+		<NumberField label="Fat" suffix="g" tone="fat" bind:value={form.fatG} required />
+		<NumberField label="Carbs" suffix="g" tone="carbs" bind:value={form.carbohydratesG} required />
+	</div>
+
+	{#if doubts.length > 0}
+		<section class="notice stack doubts" aria-live="polite">
+			<strong>Worth a look at the package</strong>
+			<ul class="small">
+				{#each doubts as doubt (doubt)}
+					<li>{doubt}</li>
+				{/each}
+			</ul>
+			<span class="small">You can still save.</span>
+		</section>
+	{/if}
 
 	<section class="card stack">
 		<div class="row spread">
-			<h2>Other nutrients</h2>
-			<button type="button" onclick={() => form.pairs.push(newPair())}>Add</button>
+			<h2>More nutrients</h2>
+			<button type="button" class="outline compact" onclick={() => form.pairs.push(newPair())}>+ Add</button>
 		</div>
 		{#each form.pairs as pair, index (pair.id)}
 			<div class="row nutrient">
@@ -178,45 +192,45 @@
 				/>
 				<button
 					type="button"
-					class="ghost icon danger"
+					class="ghost icon"
 					aria-label="Remove nutrient"
-					onclick={() => form.pairs.splice(index, 1)}>✕</button
+					onclick={() => form.pairs.splice(index, 1)}><X size={18} strokeWidth={2.6} aria-hidden="true" /></button
 				>
 			</div>
+		{:else}
+			<p class="muted small">Fibre, sugars, salt, vitamins — whatever the label lists.</p>
 		{/each}
 		{#if duplicates.size > 0}
 			<p class="error small">Each nutrient can appear only once.</p>
 		{/if}
 	</section>
 
-	{#if doubts.length > 0}
-		<section class="card stack doubts" aria-live="polite">
-			<h2>Check against the package</h2>
-			<ul class="small">
-				{#each doubts as doubt (doubt)}
-					<li>{doubt}</li>
-				{/each}
-			</ul>
-		</section>
-	{/if}
-
-	<div class="row end">
-		<button class="primary" type="submit" disabled={!complete || busy}>{submitLabel}</button>
+	<div class="save-bar">
+		<div class="grow totals">
+			<NumberField label="Price per 100 {form.unit}" suffix="optional" bind:value={form.cost} />
+		</div>
+		<button class="confirm" type="submit" disabled={!complete || busy}>{submitLabel}</button>
 	</div>
 </form>
 
 <style>
-	.doubts {
-		border-color: var(--warning);
+	.editor {
+		gap: 1rem;
 	}
 
-	.doubts h2 {
-		color: var(--warning);
+	.identity {
+		flex-wrap: nowrap;
+		align-items: flex-end;
+	}
+
+	.unit {
+		width: 7rem;
 	}
 
 	.doubts ul {
 		margin: 0;
 		padding-left: 1.1rem;
+		list-style: disc;
 	}
 
 	.nutrient {
@@ -226,5 +240,26 @@
 	.amount {
 		width: 6.5rem;
 		flex: none;
+	}
+
+	/* The price sits in the save bar, on the ink: it is the one optional figure left. */
+	.save-bar :global(.field) {
+		gap: 0;
+	}
+
+	.save-bar :global(.field > span) {
+		font-size: 0.75rem;
+		opacity: 0.75;
+	}
+
+	.save-bar :global(input) {
+		min-height: 0;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--hero-text);
+		font-family: var(--font-display);
+		font-size: 1.35rem;
+		font-weight: 800;
 	}
 </style>

@@ -13,7 +13,7 @@
 	const draft = $derived(keepDraft<DayPlanFormState>(`day-plan:${plan.id}:${plan.updatedAt}`));
 </script>
 
-<PageHeader title="Edit day plan" back="/day-plans/{plan.id}" />
+<PageHeader title="Edit day plan" back="/day-plans/{plan.id}" backLabel={plan.label} />
 
 {#key plan.updatedAt}
 	<DayPlanForm

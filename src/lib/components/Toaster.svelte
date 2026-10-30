@@ -11,16 +11,17 @@
 </div>
 
 <style>
+	/* Above the tab bar and the Ask handle, and above an open sheet too. */
 	.toaster {
 		position: fixed;
-		left: 0.75rem;
-		right: 0.75rem;
-		bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 0.75rem);
+		left: 1rem;
+		right: 1rem;
+		bottom: calc(var(--chrome-bottom) + 0.5rem);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 0.5rem;
-		z-index: 20;
+		z-index: 60;
 		pointer-events: none;
 	}
 
@@ -30,14 +31,16 @@
 		width: 100%;
 		justify-content: flex-start;
 		text-align: left;
-		background: var(--text);
-		color: var(--bg);
-		border: none;
-		box-shadow: 0 6px 24px rgb(0 0 0 / 0.2);
+		white-space: normal;
+		border-radius: 20px;
+		padding: 0.75rem 1rem;
+		background: var(--accent);
+		color: var(--accent-text);
+		box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
 	}
 
 	.toast.error {
 		background: var(--danger);
-		color: #fff;
+		color: var(--bg);
 	}
 </style>

@@ -20,7 +20,7 @@
 
 <div class="stack">
 	<!-- svelte-ignore a11y_autofocus -->
-	<input type="search" placeholder="Filter products" bind:value={query} autofocus />
+	<input type="search" placeholder="Filter products" aria-label="Filter products" bind:value={query} autofocus />
 	{#if matches.length === 0}
 		<p class="empty">No products match. Add one from the Products tab.</p>
 	{:else}
@@ -32,7 +32,7 @@
 							><strong>{product.name}</strong>
 							{#if product.brand}<span class="muted small">{product.brand}</span>{/if}</span
 						>
-						<span class="muted small">per 100 {product.unit}: <MacroLine macros={product.macros} /></span>
+						<span class="muted small per">per 100 {product.unit} <MacroLine macros={product.macros} /></span>
 					</button>
 				</li>
 			{/each}
@@ -50,7 +50,12 @@
 		width: 100%;
 		flex-direction: column;
 		align-items: flex-start;
+		gap: 0.3rem;
 		text-align: left;
+		white-space: normal;
+		border-radius: 20px;
+		padding: 0.7rem 1rem;
 		background: var(--surface);
+		font-weight: 500;
 	}
 </style>

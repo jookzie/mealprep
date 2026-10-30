@@ -11,7 +11,7 @@
 	const draft = $derived(keepDraft<DayPlanFormState>('day-plan:new'));
 </script>
 
-<PageHeader title="New day plan" back="/day-plans" />
+<PageHeader title="New day plan" back="/day-plans" backLabel="Day plans" />
 
 <DayPlanForm
 	initial={emptyDayPlanDraft()}

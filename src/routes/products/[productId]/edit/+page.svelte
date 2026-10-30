@@ -13,7 +13,7 @@
 	const draft = $derived(keepDraft<ProductFormState>(`product:${product.id}:${product.updatedAt}`));
 </script>
 
-<PageHeader title="Edit product" back="/products/{product.id}" />
+<PageHeader title="Edit product" back="/products/{product.id}" backLabel={product.name} />
 
 <!-- Keyed on updatedAt, so a save re-seeds the form while a refresh mid-edit does not. -->
 {#key product.updatedAt}

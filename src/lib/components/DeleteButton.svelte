@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Dialog from './Dialog.svelte';
 
 	let {
@@ -21,12 +22,14 @@
 	}
 </script>
 
-<button class="danger" onclick={() => (open = true)}>Delete</button>
+<button class="icon ghost danger" aria-label="Delete {what}" onclick={() => (open = true)}>
+	<Trash2 size={18} strokeWidth={2.4} aria-hidden="true" />
+</button>
 
 <Dialog bind:open title="Delete {what}?">
-	<p class="muted">{consequence}</p>
-	<div class="row end">
-		<button onclick={() => (open = false)}>Cancel</button>
-		<button class="primary" onclick={confirm} disabled={busy}>Delete</button>
+	<p>{consequence}</p>
+	<div class="grid-2">
+		<button class="outline" onclick={() => (open = false)}>Keep it</button>
+		<button class="danger outline" onclick={confirm} disabled={busy}>Delete</button>
 	</div>
 </Dialog>

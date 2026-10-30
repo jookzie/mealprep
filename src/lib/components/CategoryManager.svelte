@@ -60,7 +60,7 @@
 					<strong>{category.name}</strong>
 					<p class="muted small">{count} {count === 1 ? noun.one : noun.many}</p>
 				</div>
-				<button onclick={() => startRename(category)}>Rename</button>
+				<button class="compact outline" onclick={() => startRename(category)}>Rename</button>
 				<DeleteButton
 					what={category.name}
 					consequence="What it groups stays, and reads as being in a removed category until you file it elsewhere."
@@ -74,8 +74,8 @@
 <Dialog bind:open={renameOpen} title="Rename category">
 	<form class="stack" onsubmit={rename}>
 		<input aria-label="Category name" bind:value={renameText} />
-		<div class="row end">
-			<button type="button" onclick={() => (renameOpen = false)}>Cancel</button>
+		<div class="grid-2">
+			<button type="button" class="outline" onclick={() => (renameOpen = false)}>Cancel</button>
 			<button class="primary" type="submit" disabled={renameText.trim() === ''}>Save</button>
 		</div>
 	</form>

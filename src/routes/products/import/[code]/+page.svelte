@@ -15,7 +15,7 @@
 	const draft = $derived(keepDraft<ProductFormState>(`import:${data.code}`));
 </script>
 
-<PageHeader title="Review import" subtitle="Barcode {data.code}" back="/products" />
+<PageHeader title="Review import" subtitle="Barcode {data.code}" back="/products" backLabel="Library" />
 
 {#if data.entry === null}
 	<p class="card error">{data.failure}</p>

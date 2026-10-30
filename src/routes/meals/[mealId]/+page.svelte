@@ -1,8 +1,9 @@
 <script lang="ts">
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Pencil from '@lucide/svelte/icons/pencil';
 	import { deleteMeal, runMutation } from '$lib/api';
 	import CostFigure from '$lib/components/CostFigure.svelte';
 	import DeleteButton from '$lib/components/DeleteButton.svelte';
-	import MacroLine from '$lib/components/MacroLine.svelte';
 	import MacroMeters from '$lib/components/MacroMeters.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { categoryName } from '$lib/domain/category';
@@ -16,55 +17,87 @@
 	const rows = $derived(servingRows(meal.servings, data.products));
 </script>
 
-<PageHeader title={meal.label} subtitle={categoryName(meal, data.categories)} back="/meals">
+<PageHeader title={meal.label} eyebrow={categoryName(meal, data.categories)} back="/meals" backLabel="Library">
 	{#snippet actions()}
-		<a class="button" href="/meals/{meal.id}/edit">Edit</a>
 		<DeleteButton
 			what={meal.label}
 			consequence="Day plans that hold it drop it from their totals."
 			onConfirm={() =>
 				runMutation(() => deleteMeal(meal.id), { success: 'Meal deleted', redirectTo: '/meals' })}
 		/>
+		<a class="button primary" href="/meals/{meal.id}/edit">
+			<Pencil size={16} strokeWidth={2.6} aria-hidden="true" />
+			Edit
+		</a>
 	{/snippet}
 </PageHeader>
 
-<section class="card stack">
-	<div class="row spread">
-		<h2>Calculated</h2>
-		<CostFigure cost={meal.cost} label="Cost" />
-	</div>
-	<MacroMeters actual={meal.macros} target={null} />
-</section>
+<MacroMeters actual={meal.macros} target={null} caption="kcal · {rows.length} {rows.length === 1 ? 'product' : 'products'}">
+	{#snippet aside()}
+		<span class="cost"><CostFigure cost={meal.cost} /></span>
+	{/snippet}
+</MacroMeters>
 
-<section class="card stack">
-	<h2>Servings</h2>
-	{#if rows.length === 0}
-		<p class="muted">No products.</p>
-	{:else}
-		<ul class="list">
-			{#each rows as row, index (`${row.productId}-${index}`)}
-				<li class="stack serving">
-					<div class="row spread">
-						{#if row.product}
-							<a class="grow truncate" href="/products/{row.productId}">{row.product.name}</a>
-						{:else}
-							<span class="grow muted">Product removed</span>
-						{/if}
-						<span class="small">{formatAmount(row.amount, row.unit)}</span>
-					</div>
-					<div class="row spread">
-						<MacroLine macros={row.macros} />
-						<CostFigure cost={row.cost} />
-					</div>
-				</li>
-			{/each}
-		</ul>
-	{/if}
-</section>
+<h2>In this meal</h2>
+{#if rows.length === 0}
+	<p class="empty">No products.</p>
+{:else}
+	<ul class="servings">
+		{#each rows as row, index (`${row.productId}-${index}`)}
+			<li>
+				{#if row.product}
+					<a href="/products/{row.productId}">
+						<span class="grow">
+							<strong class="truncate">{row.product.name}</strong>
+							<span class="muted small">
+								{formatAmount(row.amount, row.unit)} · <CostFigure cost={row.cost} />
+							</span>
+						</span>
+						<span class="figure strong">{Math.round(row.macros.energyKcal)}</span>
+						<ChevronRight size={18} aria-hidden="true" />
+					</a>
+				{:else}
+					<span class="removed">
+						<span class="grow">
+							<strong class="muted">Product removed</strong>
+							<span class="muted small">{formatAmount(row.amount, row.unit)}</span>
+						</span>
+					</span>
+				{/if}
+			</li>
+		{/each}
+	</ul>
+{/if}
 
 <style>
-	.serving + .serving {
-		border-top: 1px solid var(--border);
-		padding-top: 0.5rem;
+	.cost {
+		padding: 0.3rem 0.75rem;
+		border-radius: 999px;
+		background: rgb(127 127 127 / 0.22);
+	}
+
+	.servings {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.servings a,
+	.removed {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 0.7rem 0;
+		border-bottom: 1.5px solid var(--border);
+		text-decoration: none;
+	}
+
+	.servings .grow {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.strong {
+		font-weight: 700;
 	}
 </style>

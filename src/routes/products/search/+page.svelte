@@ -20,7 +20,7 @@
 	}
 </script>
 
-<PageHeader title="Search catalogue" back="/products">
+<PageHeader title="Search catalogue" back="/products" backLabel="Library">
 	{#snippet actions()}
 		<ScanButton />
 	{/snippet}

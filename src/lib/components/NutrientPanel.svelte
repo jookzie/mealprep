@@ -9,8 +9,11 @@
 </script>
 
 {#if rows.length > 0}
-	<details class="card">
-		<summary>All nutrients per 100 {unit} ({rows.length})</summary>
+	<details class="panel">
+		<summary>
+			<span class="display">Full label per 100 {unit}</span>
+			<span class="muted small">{rows.length} more</span>
+		</summary>
 		<table>
 			<tbody>
 				{#each rows as row (row.key)}
@@ -25,9 +28,28 @@
 {/if}
 
 <style>
+	.panel {
+		border: 2px solid var(--text);
+		border-radius: var(--radius);
+		padding: 0.25rem 1rem 0.5rem;
+	}
+
 	summary {
 		cursor: pointer;
-		min-height: 32px;
+		min-height: 44px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		list-style: none;
+	}
+
+	summary::-webkit-details-marker {
+		display: none;
+	}
+
+	summary .display {
+		font-size: 1.15rem;
 	}
 
 	table {
@@ -39,8 +61,8 @@
 
 	th {
 		text-align: left;
-		font-weight: 400;
-		padding: 0.25rem 0;
+		font-weight: 700;
+		padding: 0.4rem 0;
 	}
 
 	.indent {
@@ -48,12 +70,17 @@
 		color: var(--muted);
 	}
 
+	.indent {
+		font-weight: 500;
+	}
+
 	td {
 		text-align: right;
+		font-weight: 700;
 		font-variant-numeric: tabular-nums;
 	}
 
 	tr + tr {
-		border-top: 1px solid var(--border);
+		border-top: 1.5px solid var(--border);
 	}
 </style>

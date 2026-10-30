@@ -1,140 +1,572 @@
+@import 'tailwindcss';
+
 /*
- * Stone neutrals with an indigo accent for interactive affordances only. Protein, fat
- * and carbs keep one Okabe-Ito hue each on every screen, none of them red: red means
- * something is broken, never that a target was exceeded. Energy is the sum of the other
- * three, so it stays neutral. Cost is money, not a macro, and takes a hue of its own.
+ * Bold and playful: white ground, near-black ink, chunky Bricolage display type over DM
+ * Sans, and three pastel blocks that each macro owns on every screen — protein orange,
+ * fat pink, carbs mint, all read with dark text. Energy is the sum of the other three, so
+ * it is not a fourth pastel: it is the ink-coloured hero card. Interactive affordances are
+ * ink too (a black pill, a white pill in dark mode), so no macro hue ever doubles as
+ * "tap here". Red stays for what is broken; yellow asks the user to double-check.
+ *
+ * The tokens are CSS variables so scoped component styles and Tailwind utilities read the
+ * same values; `@theme inline` below hands them to Tailwind under the same names.
  */
 :root {
 	color-scheme: light dark;
 
-	--bg: #fafaf9;
-	--surface: #ffffff;
-	--surface-2: #f5f5f4;
-	--text: #1c1917;
-	--muted: #6b6560;
-	--border: #e7e5e4;
-	--accent: #4f46e5;
+	--bg: #ffffff;
+	--surface: #f4f4f1;
+	--surface-2: #e9e9e5;
+	--raised: #ffffff;
+	--text: #111111;
+	--muted: #5c5c5c;
+	--border: #e4e4e0;
+	--accent: #111111;
 	--accent-text: #ffffff;
-	--danger: #b91c1c;
-	--warning: #b45309;
+	--hero: #111111;
+	--hero-text: #ffffff;
+	--hero-muted: #cfcfcf;
+	--danger: #b3261e;
+	--warning: #8a5a00;
+	--warning-bg: #ffe27a;
+	--confirm: #a7e8c9;
 
-	--protein: #e69f00;
-	--fat: #cc79a7;
-	--carbs: #009e73;
-	--energy: #57534e;
-	--cost: #56b4e9;
+	--protein: #ffc37a;
+	--fat: #f4c2ec;
+	--carbs: #a7e8c9;
+	--energy: var(--hero);
+	--on-macro: #111111;
+	--cost: #111111;
 
-	--radius: 12px;
-	--nav-height: 60px;
+	--radius: 22px;
+	--radius-lg: 28px;
+	--nav-height: 64px;
+	--nav-gap: 24px;
+	/* What the floating bar and the Ask handle above it take from the foot of the page. */
+	--chrome-bottom: calc(var(--nav-height) + var(--nav-gap) + 52px + env(safe-area-inset-bottom));
 
-	font-family:
-		system-ui,
-		-apple-system,
-		'Segoe UI',
-		Roboto,
-		sans-serif;
+	--font-display: 'Bricolage Grotesque Variable', 'DM Sans Variable', system-ui, sans-serif;
+	--font-body: 'DM Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+	font-family: var(--font-body);
 	font-size: 16px;
-	line-height: 1.45;
+	line-height: 1.4;
 	background: var(--bg);
 	color: var(--text);
 }
 
+/* An editor hides the tab bar; what stays at the foot is its own save bar. */
+html[data-editing] {
+	--chrome-bottom: calc(76px + env(safe-area-inset-bottom));
+}
+
 @media (prefers-color-scheme: dark) {
 	:root {
-		--bg: #0c0a09;
-		--surface: #1c1917;
-		--surface-2: #292524;
-		--text: #fafaf9;
-		--muted: #a8a29e;
-		--border: #3a3431;
-		--accent: #818cf8;
-		--accent-text: #0c0a09;
-		--danger: #f87171;
-		--warning: #fbbf24;
-		--energy: #d6d3d1;
+		--bg: #121211;
+		--surface: #1f1f1d;
+		--surface-2: #2c2c29;
+		--raised: #1f1f1d;
+		--text: #f5f5f2;
+		--muted: #a9a9a4;
+		--border: #34342f;
+		--accent: #f5f5f2;
+		--accent-text: #111111;
+		--hero: #f5f5f2;
+		--hero-text: #111111;
+		--hero-muted: #4a4a4a;
+		--danger: #ff8a80;
+		--warning: #ffd75e;
+		--cost: #f5f5f2;
 	}
 }
 
-* {
-	box-sizing: border-box;
+@theme inline {
+	--color-bg: var(--bg);
+	--color-surface: var(--surface);
+	--color-surface-2: var(--surface-2);
+	--color-raised: var(--raised);
+	--color-ink: var(--text);
+	--color-muted: var(--muted);
+	--color-line: var(--border);
+	--color-accent: var(--accent);
+	--color-accent-text: var(--accent-text);
+	--color-hero: var(--hero);
+	--color-hero-text: var(--hero-text);
+	--color-hero-muted: var(--hero-muted);
+	--color-danger: var(--danger);
+	--color-warning: var(--warning);
+	--color-warning-bg: var(--warning-bg);
+	--color-confirm: var(--confirm);
+	--color-protein: var(--protein);
+	--color-fat: var(--fat);
+	--color-carbs: var(--carbs);
+	--color-on-macro: var(--on-macro);
+	--font-display: var(--font-display);
+	--font-sans: var(--font-body);
+	--radius-card: var(--radius);
+	--radius-card-lg: var(--radius-lg);
 }
 
-body {
-	margin: 0;
-	-webkit-tap-highlight-color: transparent;
+@layer base {
+	body {
+		margin: 0;
+		background: var(--bg);
+		-webkit-tap-highlight-color: transparent;
+		overscroll-behavior-x: none;
+	}
+
+	a {
+		color: inherit;
+	}
+
+	h1 {
+		font-family: var(--font-display);
+		font-size: 2.125rem;
+		font-weight: 800;
+		letter-spacing: -0.03em;
+		line-height: 1.05;
+		margin: 0;
+	}
+
+	h2 {
+		font-family: var(--font-display);
+		font-size: 1.375rem;
+		font-weight: 800;
+		letter-spacing: -0.02em;
+		line-height: 1.15;
+		margin: 0;
+	}
+
+	h3 {
+		font-size: 0.95rem;
+		font-weight: 700;
+		margin: 0;
+	}
+
+	p {
+		margin: 0;
+	}
+
+	:focus-visible {
+		outline: 3px solid var(--text);
+		outline-offset: 2px;
+	}
+
+	button,
+	.button {
+		font: inherit;
+		font-weight: 700;
+		border: 2px solid transparent;
+		background: var(--surface);
+		color: var(--text);
+		border-radius: 999px;
+		padding: 0.5rem 1.1rem;
+		min-height: 44px;
+		cursor: pointer;
+		text-decoration: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.4rem;
+		white-space: nowrap;
+	}
+
+	button:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	input,
+	select,
+	textarea {
+		font: inherit;
+		color: var(--text);
+		background: var(--raised);
+		border: 2px solid var(--border);
+		border-radius: 16px;
+		padding: 0.55rem 0.9rem;
+		min-height: 48px;
+		width: 100%;
+	}
+
+	input:focus,
+	select:focus,
+	textarea:focus {
+		border-color: var(--text);
+		outline: none;
+	}
+
+	input[type='checkbox'] {
+		width: auto;
+		min-height: 0;
+		accent-color: var(--text);
+	}
+
+	input[aria-invalid='true'] {
+		border-color: var(--danger);
+	}
+
+	fieldset {
+		border: none;
+		padding: 0;
+		margin: 0;
+		min-width: 0;
+	}
+
+	code {
+		font-size: 0.9em;
+	}
+
+	/*
+	 * Every dialog is a bottom sheet: it rises from the foot of the screen, where the thumb
+	 * already is, and is dismissed downward. `Dialog.svelte` adds the grabber and the drag.
+	 */
+	dialog {
+		margin: auto 0 0;
+		width: 100%;
+		max-width: 100%;
+		max-height: calc(100dvh - env(safe-area-inset-top) - 2rem);
+		border: none;
+		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+		background: var(--bg);
+		color: var(--text);
+		padding: 0.6rem 1.125rem calc(1.5rem + env(safe-area-inset-bottom));
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+
+	dialog[open] {
+		animation: sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+
+	dialog::backdrop {
+		background: rgb(17 17 17 / 0.5);
+	}
+
+	@media (min-width: 40rem) {
+		dialog {
+			margin: auto;
+			width: min(34rem, calc(100vw - 2rem));
+			border-radius: var(--radius-lg);
+			padding-bottom: 1.5rem;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		dialog[open] {
+			animation: none;
+		}
+	}
 }
 
-a {
-	color: inherit;
+@keyframes sheet-in {
+	from {
+		transform: translateY(40px);
+		opacity: 0;
+	}
 }
 
-h1 {
-	font-size: 1.35rem;
-	margin: 0;
-}
+@layer components {
+	.card {
+		background: var(--surface);
+		border-radius: var(--radius);
+		padding: 0.9rem 1rem;
+	}
 
-h2 {
-	font-size: 1.05rem;
-	margin: 0;
-}
+	.stack {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
 
-h3 {
-	font-size: 0.95rem;
-	margin: 0;
-}
+	.row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
 
-p {
-	margin: 0;
-}
+	.spread {
+		justify-content: space-between;
+	}
 
-.card {
-	background: var(--surface);
-	border: 1px solid var(--border);
-	border-radius: var(--radius);
-	padding: 0.875rem 1rem;
-}
+	.end {
+		justify-content: flex-end;
+	}
 
-.stack {
-	display: flex;
-	flex-direction: column;
-	gap: 0.75rem;
-}
+	.grow {
+		flex: 1;
+		min-width: 0;
+	}
 
-.row {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	flex-wrap: wrap;
-}
+	.muted {
+		color: var(--muted);
+	}
 
-.spread {
-	justify-content: space-between;
-}
+	.small {
+		font-size: 0.85rem;
+	}
 
-.end {
-	justify-content: flex-end;
-}
+	.error {
+		color: var(--danger);
+	}
 
-.grow {
-	flex: 1;
-	min-width: 0;
-}
+	/* Yellow asks the user to double-check; red stays for what is actually broken. */
+	.warning {
+		color: var(--warning);
+	}
 
-.muted {
-	color: var(--muted);
-}
+	.notice {
+		background: var(--warning-bg);
+		color: #111111;
+		border-radius: 18px;
+		padding: 0.75rem 0.9rem;
+	}
 
-.small {
-	font-size: 0.85rem;
-}
+	/* Block-level because an inline box never clips: inside a block parent the unbroken line
+	   widened the page, and the phone zoomed out to fit it, pushing the tab bar off screen. */
+	.truncate {
+		display: block;
+		min-width: 0;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 
-.error {
-	color: var(--danger);
-}
+	.display {
+		font-family: var(--font-display);
+		font-weight: 800;
+		letter-spacing: -0.03em;
+	}
 
-/* Amber asks the user to double-check; red stays for what is actually broken. */
-.warning {
-	color: var(--warning);
+	.figure {
+		font-variant-numeric: tabular-nums;
+	}
+
+	button.primary,
+	.button.primary {
+		background: var(--accent);
+		color: var(--accent-text);
+	}
+
+	/* The confirming action of an editor: mint, so Save never reads as just another button. */
+	button.confirm,
+	.button.confirm {
+		background: var(--confirm);
+		color: #111111;
+	}
+
+	button.outline,
+	.button.outline {
+		background: transparent;
+		border-color: var(--text);
+	}
+
+	button.danger,
+	.button.danger {
+		color: var(--danger);
+	}
+
+	button.danger.outline,
+	.button.danger.outline {
+		border-color: var(--danger);
+	}
+
+	button.ghost,
+	.button.ghost {
+		background: transparent;
+	}
+
+	button.icon,
+	.button.icon {
+		min-width: 44px;
+		padding: 0.4rem;
+	}
+
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		font-size: 0.85rem;
+	}
+
+	.field > span {
+		font-weight: 700;
+	}
+
+	.grid-2 {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.75rem;
+	}
+
+	.list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.list-link {
+		display: block;
+		text-decoration: none;
+	}
+
+	.pill {
+		font-size: 0.75rem;
+		font-weight: 700;
+		border-radius: 999px;
+		padding: 0.15rem 0.6rem;
+		background: var(--surface-2);
+		color: var(--text);
+		white-space: nowrap;
+	}
+
+	.empty {
+		text-align: center;
+		padding: 2rem 1rem;
+		color: var(--muted);
+	}
+
+	/* A row of choices that scrolls sideways rather than wrapping; the tab swipe leaves it be. */
+	.chips {
+		display: flex;
+		gap: 0.5rem;
+		overflow-x: auto;
+		scrollbar-width: none;
+		margin: 0 -1.125rem;
+		padding: 0 1.125rem;
+	}
+
+	.chips::-webkit-scrollbar {
+		display: none;
+	}
+
+	.chip {
+		flex: 0 0 auto;
+		min-height: 36px;
+		padding: 0.3rem 0.9rem;
+		font-size: 0.9rem;
+		background: var(--surface);
+		color: var(--text);
+	}
+
+	.chip[aria-pressed='true'],
+	.chip[aria-current='page'] {
+		background: var(--accent);
+		color: var(--accent-text);
+	}
+
+	/* Two or three equal choices in a track: a section switch, a range, a unit. */
+	.segmented {
+		display: grid;
+		grid-auto-columns: minmax(0, 1fr);
+		grid-auto-flow: column;
+		background: var(--surface);
+		border-radius: 999px;
+		padding: 4px;
+	}
+
+	.segmented > * {
+		min-height: 40px;
+		border-radius: 999px;
+		background: transparent;
+		font-weight: 600;
+		text-decoration: none;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0 0.5rem;
+		border: none;
+	}
+
+	.segmented > [aria-current='page'],
+	.segmented > [aria-pressed='true'],
+	.segmented > [aria-checked='true'] {
+		background: var(--accent);
+		color: var(--accent-text);
+		font-weight: 700;
+	}
+
+	.title-input {
+		font-family: var(--font-display);
+		font-size: 1.35rem;
+		font-weight: 800;
+		border-color: var(--text);
+	}
+
+	button.compact,
+	.button.compact {
+		min-height: 40px;
+		padding: 0 0.8rem;
+		font-size: 0.9rem;
+	}
+
+	/* A composition's ordered rows: what is in it, the figure to type, and the order buttons. */
+	.editor-rows {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.editor-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 56px;
+		padding: 6px 6px 6px 14px;
+		border-radius: 18px;
+		background: var(--surface);
+	}
+
+	.editor-row > .grow {
+		display: flex;
+		flex-direction: column;
+		line-height: 1.25;
+	}
+
+	.editor-row .detail {
+		color: var(--muted);
+		font-weight: 600;
+		font-size: 0.8rem;
+	}
+
+	/* An editor's save bar: the derived total, read-only, beside the one action that saves. */
+	.save-bar {
+		position: sticky;
+		bottom: calc(12px + env(safe-area-inset-bottom));
+		z-index: 6;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		background: var(--hero);
+		color: var(--hero-text);
+		border-radius: 999px;
+		padding: 0.6rem 0.6rem 0.6rem 1.25rem;
+		box-shadow: 0 10px 30px rgb(0 0 0 / 0.2);
+	}
+
+	.save-bar .totals {
+		display: flex;
+		flex-direction: column;
+		line-height: 1.15;
+		min-width: 0;
+	}
+
+	.save-bar .totals .display {
+		font-size: 1.35rem;
+	}
+
+	.save-bar .confirm {
+		min-height: 52px;
+		padding: 0 1.5rem;
+	}
 }
 
 /*
@@ -146,140 +578,62 @@ html.scanning body {
 	background: transparent;
 }
 
-/* Block-level because an inline box never clips: inside a block parent the unbroken line
-   widened the page, and the phone zoomed out to fit it, pushing the tab bar off screen. */
-.truncate {
-	display: block;
-	min-width: 0;
-	max-width: 100%;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+/*
+ * Switching tabs slides the way the swipe went; anything else crossfades. `+layout.svelte`
+ * sets the direction on the root before the transition starts.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation-duration: 180ms;
 }
 
-button,
-.button {
-	font: inherit;
-	border: 1px solid var(--border);
-	background: var(--surface-2);
-	color: var(--text);
-	border-radius: 10px;
-	padding: 0.5rem 0.9rem;
-	min-height: 44px;
-	cursor: pointer;
-	text-decoration: none;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.35rem;
+html[data-slide='next']::view-transition-old(root) {
+	animation: slide-out-left 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-button.primary,
-.button.primary {
-	background: var(--accent);
-	color: var(--accent-text);
-	border-color: transparent;
+html[data-slide='next']::view-transition-new(root) {
+	animation: slide-in-right 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-button.danger {
-	color: var(--danger);
+html[data-slide='previous']::view-transition-old(root) {
+	animation: slide-out-right 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-button.ghost {
-	background: transparent;
-	border-color: transparent;
+html[data-slide='previous']::view-transition-new(root) {
+	animation: slide-in-left 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-button.icon {
-	min-width: 44px;
-	padding: 0.4rem;
+@keyframes slide-out-left {
+	to {
+		transform: translateX(-30%);
+		opacity: 0;
+	}
 }
 
-button:disabled {
-	opacity: 0.5;
-	cursor: default;
+@keyframes slide-in-right {
+	from {
+		transform: translateX(30%);
+		opacity: 0;
+	}
 }
 
-input,
-select,
-textarea {
-	font: inherit;
-	color: var(--text);
-	background: var(--surface);
-	border: 1px solid var(--border);
-	border-radius: 10px;
-	padding: 0.5rem 0.7rem;
-	min-height: 44px;
-	width: 100%;
+@keyframes slide-out-right {
+	to {
+		transform: translateX(30%);
+		opacity: 0;
+	}
 }
 
-input[type='checkbox'] {
-	width: auto;
-	min-height: 0;
+@keyframes slide-in-left {
+	from {
+		transform: translateX(-30%);
+		opacity: 0;
+	}
 }
 
-:focus-visible {
-	outline: 2px solid var(--accent);
-	outline-offset: 2px;
-}
-
-.field {
-	display: flex;
-	flex-direction: column;
-	gap: 0.25rem;
-	font-size: 0.85rem;
-	color: var(--muted);
-}
-
-.field > span {
-	font-weight: 500;
-}
-
-.grid-2 {
-	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 0.75rem;
-}
-
-.list {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-	display: flex;
-	flex-direction: column;
-	gap: 0.5rem;
-}
-
-.list-link {
-	display: block;
-	text-decoration: none;
-}
-
-.pill {
-	font-size: 0.75rem;
-	border-radius: 999px;
-	padding: 0.1rem 0.55rem;
-	background: var(--surface-2);
-	color: var(--muted);
-	white-space: nowrap;
-}
-
-.empty {
-	text-align: center;
-	padding: 2rem 1rem;
-	color: var(--muted);
-}
-
-dialog {
-	width: min(32rem, calc(100vw - 1.5rem));
-	max-height: calc(100dvh - 3rem);
-	border: 1px solid var(--border);
-	border-radius: var(--radius);
-	background: var(--surface);
-	color: var(--text);
-	padding: 1rem;
-}
-
-dialog::backdrop {
-	background: rgb(0 0 0 / 0.45);
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation: none !important;
+	}
 }

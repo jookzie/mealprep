@@ -13,7 +13,7 @@
 	const draft = $derived(keepDraft<MealFormState>(`meal:${meal.id}:${meal.updatedAt}`));
 </script>
 
-<PageHeader title="Edit meal" back="/meals/{meal.id}" />
+<PageHeader title="Edit meal" back="/meals/{meal.id}" backLabel={meal.label} />
 
 {#key meal.updatedAt}
 	<MealForm

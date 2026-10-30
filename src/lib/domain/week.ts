@@ -15,7 +15,7 @@ function format(date: Date): IsoDate {
 	return date.toISOString().slice(0, 10);
 }
 
-function shiftDays(date: IsoDate, days: number): IsoDate {
+export function shiftDays(date: IsoDate, days: number): IsoDate {
 	const d = parse(date);
 	d.setUTCDate(d.getUTCDate() + days);
 	return format(d);
@@ -108,6 +108,23 @@ export function dayMonthLabel(date: IsoDate): string {
 
 export function fullDateLabel(date: IsoDate): string {
 	return fullDate.format(parse(date));
+}
+
+const headingDate = new Intl.DateTimeFormat(undefined, {
+	weekday: 'long',
+	day: 'numeric',
+	month: 'short',
+	timeZone: 'UTC',
+});
+
+/** A day as a screen heading names it: the weekday spelled out, no year. */
+export function headingDateLabel(date: IsoDate): string {
+	return headingDate.format(parse(date));
+}
+
+/** The day of the month alone, as a day pill shows it under its weekday. */
+export function dayOfMonth(date: IsoDate): number {
+	return parse(date).getUTCDate();
 }
 
 export function weekLabel(weekStart: IsoDate): string {

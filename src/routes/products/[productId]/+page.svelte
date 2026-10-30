@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Pencil from '@lucide/svelte/icons/pencil';
 	import { deleteProduct, runMutation } from '$lib/api';
 	import CostFigure from '$lib/components/CostFigure.svelte';
 	import DeleteButton from '$lib/components/DeleteButton.svelte';
@@ -7,7 +8,6 @@
 	import OffCredit from '$lib/components/OffCredit.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { productCost } from '$lib/domain/cost';
-	import { formatUnitName } from '$lib/domain/format';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -15,9 +15,13 @@
 	const product = $derived(data.product);
 </script>
 
-<PageHeader title={product.name} subtitle={product.brand} back="/products">
+<PageHeader
+	title={product.name}
+	eyebrow={[product.brand, product.sourceCode ? 'Open Food Facts' : 'Added by hand'].filter(Boolean).join(' · ')}
+	back="/products"
+	backLabel="Library"
+>
 	{#snippet actions()}
-		<a class="button" href="/products/{product.id}/edit">Edit</a>
 		<DeleteButton
 			what={product.name}
 			consequence="Meals and day plans that use it keep the entry and show it as removed."
@@ -27,21 +31,29 @@
 					redirectTo: '/products',
 				})}
 		/>
+		<a class="button primary" href="/products/{product.id}/edit">
+			<Pencil size={16} strokeWidth={2.6} aria-hidden="true" />
+			Edit
+		</a>
 	{/snippet}
 </PageHeader>
 
-<section class="card stack">
-	<div class="row spread">
-		<h2>Per 100 {formatUnitName(product.unit)}</h2>
-		<CostFigure cost={productCost(product)} label="Cost" />
-	</div>
-	<MacroMeters actual={product.macros} target={null} />
-</section>
+<MacroMeters actual={product.macros} target={null} caption="kcal per 100 {product.unit}">
+	{#snippet aside()}
+		<span class="cost"><CostFigure cost={productCost(product)} label="per 100 {product.unit}" /></span>
+	{/snippet}
+</MacroMeters>
 
 <NutrientPanel nutrients={product.nutrients} unit={product.unit} />
 
 {#if product.sourceCode}
 	<OffCredit code={product.sourceCode} />
-{:else}
-	<p class="muted small">Entered by hand.</p>
 {/if}
+
+<style>
+	.cost {
+		padding: 0.3rem 0.75rem;
+		border-radius: 999px;
+		background: rgb(127 127 127 / 0.22);
+	}
+</style>

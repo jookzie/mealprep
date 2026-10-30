@@ -16,9 +16,8 @@
 	import CostFigure from './CostFigure.svelte';
 	import Dialog from './Dialog.svelte';
 	import DraftNotice from './DraftNotice.svelte';
-	import MacroLine from './MacroLine.svelte';
+	import AmountField from './AmountField.svelte';
 	import MoveButtons from './MoveButtons.svelte';
-	import NumberField from './NumberField.svelte';
 	import ProductPicker from './ProductPicker.svelte';
 
 	let {
@@ -78,6 +77,7 @@
 			products,
 		),
 	);
+	const totals = $derived(draftMacros(preview));
 	const valid = $derived(
 		form.label.trim() !== '' && form.rows.every((row) => row.amount !== null && row.amount > 0),
 	);
@@ -104,71 +104,74 @@
 	}
 </script>
 
-<form class="stack" onsubmit={submit}>
+<form class="stack editor" onsubmit={submit}>
 	{#if restored}
 		<DraftNotice onStartOver={startOver} />
 	{/if}
 
-	<section class="card stack">
-		<label class="field">
-			<span>Label</span>
-			<input bind:value={form.label} required />
-		</label>
-		<CategorySelect {categories} bind:value={form.categoryId} />
-	</section>
+	<label class="field">
+		<span>Name</span>
+		<input class="title-input" bind:value={form.label} required />
+	</label>
+	<CategorySelect {categories} bind:value={form.categoryId} />
 
-	<section class="card stack">
-		<div class="row spread">
-			<h2>Servings</h2>
-			<button type="button" onclick={() => (picking = true)}>Add product</button>
+	<div class="row spread">
+		<h2>Servings</h2>
+		<span class="muted small">In eating order</span>
+	</div>
+	{#if form.rows.length === 0}
+		<p class="empty">No products yet.</p>
+	{:else}
+		<ol class="editor-rows">
+			{#each form.rows as row, index (row.key)}
+				{@const product = productsById.get(row.productId)}
+				<li class="editor-row">
+					<div class="grow">
+						<strong class="truncate" class:muted={!product}>{product?.name ?? 'Product removed'}</strong>
+						<span class="detail">{Math.round(preview[index]?.macros.energyKcal ?? 0)} kcal</span>
+					</div>
+					<AmountField
+						label="Amount of {product?.name ?? 'product'}"
+						unit={product?.unit ?? 'g'}
+						bind:value={row.amount}
+					/>
+					<MoveButtons
+						{index}
+						length={form.rows.length}
+						name={product?.name ?? 'serving'}
+						onMove={(from, to) => (form.rows = move(form.rows, from, to))}
+						onRemove={() => form.rows.splice(index, 1)}
+					/>
+				</li>
+			{/each}
+		</ol>
+	{/if}
+	<button type="button" class="add" onclick={() => (picking = true)}>+ Add a product</button>
+
+	<div class="save-bar">
+		<div class="grow totals">
+			<span class="display">{Math.round(totals.energyKcal)} kcal</span>
+			<span class="small">
+				P {Math.round(totals.proteinG)} · F {Math.round(totals.fatG)} · C {Math.round(totals.carbohydratesG)}
+				· <CostFigure cost={draftCost(preview)} />
+			</span>
 		</div>
-		{#if form.rows.length === 0}
-			<p class="empty">No products yet.</p>
-		{:else}
-			<ul class="list">
-				{#each form.rows as row, index (row.key)}
-					{@const product = productsById.get(row.productId)}
-					<li class="stack entry">
-						<div class="row spread">
-							<strong class="grow truncate" class:muted={!product}
-								>{product?.name ?? 'Product removed'}</strong
-							>
-							<MoveButtons
-								{index}
-								length={form.rows.length}
-								name={product?.name ?? 'serving'}
-								onMove={(from, to) => (form.rows = move(form.rows, from, to))}
-								onRemove={() => form.rows.splice(index, 1)}
-							/>
-						</div>
-						<NumberField label="Amount" suffix={product?.unit ?? 'g'} bind:value={row.amount} required />
-						{#if preview[index]}
-							<MacroLine macros={preview[index].macros} />
-						{/if}
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	</section>
-
-	<section class="card stack" aria-label="Calculated totals">
-		<h2>Calculated</h2>
-		<MacroLine macros={draftMacros(preview)} />
-		<CostFigure cost={draftCost(preview)} label="Cost" />
-	</section>
-
-	<div class="row end">
-		<button class="primary" type="submit" disabled={!valid || busy}>{submitLabel}</button>
+		<button class="confirm" type="submit" disabled={!valid || busy}>{submitLabel}</button>
 	</div>
 </form>
 
-<Dialog bind:open={picking} title="Add a product">
+<Dialog bind:open={picking} title="Add a product" tall>
 	<ProductPicker {products} onPick={add} />
 </Dialog>
 
 <style>
-	.entry + .entry {
-		border-top: 1px solid var(--border);
-		padding-top: 0.75rem;
+	.editor {
+		gap: 1rem;
+	}
+
+	.add {
+		min-height: 52px;
+		border: 2px dashed var(--text);
+		background: transparent;
 	}
 </style>

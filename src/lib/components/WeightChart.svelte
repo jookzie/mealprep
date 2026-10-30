@@ -18,7 +18,7 @@
 	const PAD_X = 10;
 	const PAD_Y = 14;
 	/** Small, because a daily series puts a mark on nearly every pixel column. */
-	const DOT = 2.5;
+	const DOT = 3;
 
 	let width = $state(320);
 	/** The day being read off the chart, or null when nothing is being pointed at. */
@@ -156,7 +156,7 @@
 	.trend {
 		fill: none;
 		stroke: var(--text);
-		stroke-width: 2;
+		stroke-width: 3.5;
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
@@ -201,8 +201,9 @@
 	}
 
 	.line-key {
-		width: 14px;
-		height: 2px;
+		width: 16px;
+		height: 3.5px;
+		border-radius: 2px;
 		background: var(--text);
 	}
 </style>

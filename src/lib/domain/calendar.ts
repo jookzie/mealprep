@@ -36,23 +36,18 @@ export type PlannedWeek = {
 };
 
 /**
- * Joins a week of assignments to the plans they name. This is the only place a
- * dayPlanId is resolved to macros, so the grid and the summary cannot disagree.
- *
- * A day whose plan has been deleted counts as unplanned: its macros are unknowable,
- * and counting it would read as a shortfall against the target rather than as the
- * dangling reference it is.
+ * Joins the given dates to the assignments on them and the plans those name, one entry
+ * per date in the order given, unplanned dates included. A date whose plan has been
+ * deleted keeps its dayPlanId and reads as unplanned.
  */
-export function buildPlannedWeek(input: {
-	weekStart: IsoDate;
-	days: readonly CalendarDay[];
-	dayPlans: readonly DayPlan[];
-	targets: Targets | null;
-}): PlannedWeek {
-	const plansById = new Map(input.dayPlans.map((plan) => [plan.id, plan]));
-	const assignedByDate = new Map(input.days.map((day) => [day.date, day]));
-
-	const days = weekDates(input.weekStart).map((date): PlannedDay => {
+export function plannedDays(
+	dates: readonly IsoDate[],
+	days: readonly CalendarDay[],
+	dayPlans: readonly DayPlan[],
+): PlannedDay[] {
+	const plansById = new Map(dayPlans.map((plan) => [plan.id, plan]));
+	const assignedByDate = new Map(days.map((day) => [day.date, day]));
+	return dates.map((date): PlannedDay => {
 		const assigned = assignedByDate.get(date);
 		if (!assigned) {
 			return { date, dayPlanId: null, dayPlan: null, macros: null, cost: null };
@@ -66,6 +61,23 @@ export function buildPlannedWeek(input: {
 			cost: dayPlan?.cost ?? null,
 		};
 	});
+}
+
+/**
+ * Joins a week of assignments to the plans they name. This is the only place a
+ * dayPlanId is resolved to macros, so the grid and the summary cannot disagree.
+ *
+ * A day whose plan has been deleted counts as unplanned: its macros are unknowable,
+ * and counting it would read as a shortfall against the target rather than as the
+ * dangling reference it is.
+ */
+export function buildPlannedWeek(input: {
+	weekStart: IsoDate;
+	days: readonly CalendarDay[];
+	dayPlans: readonly DayPlan[];
+	targets: Targets | null;
+}): PlannedWeek {
+	const days = plannedDays(weekDates(input.weekStart), input.days, input.dayPlans);
 
 	const planned = days.filter((day) => day.macros !== null);
 	const total = planned.reduce((sum, day) => addMacros(sum, day.macros as Macros), ZERO_MACROS);
@@ -134,4 +146,25 @@ export function buildPlannedPeriod(input: {
 		totalCost,
 		averageCostPerPlannedDay: plannedCount === 0 ? null : scaleCost(totalCost, 1 / plannedCount),
 	};
+}
+
+/** What assigning a plan would do to a date: nothing, replace another plan, or fill a gap. */
+export type AssignmentEffect = 'same' | 'replace' | 'new';
+
+/**
+ * Says, per date, what a bulk assignment of one plan would do, so the sheet can name the
+ * days it changes before anything is written (CL-4). A date whose plan was deleted counts
+ * as a replacement: there is an assignment there, even if it no longer resolves.
+ */
+export function assignmentEffects(
+	dates: readonly IsoDate[],
+	days: readonly CalendarDay[],
+	dayPlanId: string,
+): { date: IsoDate; effect: AssignmentEffect }[] {
+	const assignedByDate = new Map(days.map((day) => [day.date, day.dayPlanId]));
+	return dates.map((date) => {
+		const current = assignedByDate.get(date);
+		if (current === undefined) return { date, effect: 'new' };
+		return { date, effect: current === dayPlanId ? 'same' : 'replace' };
+	});
 }
