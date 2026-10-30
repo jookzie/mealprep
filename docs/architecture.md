@@ -215,7 +215,7 @@ offers to start over.
   the device, which is why the feature is off until the user supplies their own API key and
   why `docs/requirements.md` §5.3 had to be rewritten. The application has no backend: the
   key is the user's, stored on the device, and the only place it goes is the `x-api-key`
-  header of that one request. A local-model adapter would be another crate implementing
+  header of its requests. A local-model adapter would be another crate implementing
   `store::Assistant` and nothing above it would change — see `docs/todo.md`.
 - **The model proposes and never writes**: it answers with a `Vec<Operation>` from a closed,
   typed set plus a sentence of rationale. `service::assistant` checks every operation against
@@ -224,8 +224,17 @@ offers to start over.
   the user confirmed, re-checked from scratch. A sync is the one operation that needs the
   outside world, so its catalogue entry is fetched before checking starts, on preview and
   again on apply, and checking stays a function of the data. A question is answered in the
-  prose with no operations, which resolves to an empty preview rather than an error. Both
-  halves matter: a typed operation set means
+  prose with no operations, which resolves to an empty preview rather than an error.
+- **A refused answer goes back to the model before it reaches the user**: one wrong call
+  sinks a whole proposal, so a request that takes several edits — create a meal, put it on
+  next week, vary it on Friday — fails far more often than one that takes a single edit.
+  `Assistant::propose` is handed the same check the preview runs, and `crates/anthropic`
+  sends a refused answer back as the error results of its calls, with the reason, at most
+  twice. The loop lives in the adapter because only it can replay the model's turn as it
+  came, thinking blocks included; `core` still checks the final answer from scratch, so
+  a passing check is a hint, never a licence. Thinking runs at `medium` effort and the
+  tools and system prompt are cached, because the user waits on a phone for every attempt.
+- **Both halves of propose-then-confirm matter**: a typed operation set means
   the model cannot express an edit the application has no rule for, and the confirmation means
   a wrong answer costs a glance rather than a database. One tool per kind of operation, with
   the schema table in `crates/anthropic` written as a match on `OperationKind`, so a new

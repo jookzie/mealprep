@@ -13,8 +13,8 @@ use std::{collections::HashMap, env, fs, process};
 use mealprep_core::{
     Entity, Error, Result,
     domain::{
-        AssistantContext, CatalogueEntry, ChatTurn, Macros, MealDraft, ProductDraft, Proposal,
-        Serving, Unit,
+        AssistantContext, CatalogueEntry, ChatTurn, Macros, MealDraft, Operation, ProductDraft,
+        Proposal, Serving, Unit,
     },
     service::Mealprep,
     store::{Assistant, Catalogue},
@@ -48,6 +48,7 @@ impl Assistant for NoAssistant {
         _history: &[ChatTurn],
         _request: &str,
         _context: &AssistantContext,
+        _check: impl Fn(&[Operation]) -> Result<()> + Send + Sync,
     ) -> Result<Proposal> {
         Err(Error::Internal {
             reason: "the import has no assistant".to_owned(),

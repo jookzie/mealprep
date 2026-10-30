@@ -51,6 +51,7 @@ impl Assistant for CannedAssistant {
         _history: &[ChatTurn],
         request: &str,
         context: &AssistantContext,
+        _check: impl Fn(&[Operation]) -> Result<()> + Send + Sync,
     ) -> Result<Proposal> {
         self.seen
             .lock()

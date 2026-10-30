@@ -1,14 +1,18 @@
 //! Claude as the Mealprep planning assistant.
 //!
-//! One request, one answer: the user's correction or question, the conversation it
-//! continues and a view of their plan go to the Messages API, and the reply comes back as tool calls — one per edit — plus some
-//! prose. The tool calls become [`Operation`]s and the prose becomes the rationale, which
-//! for a question is the whole answer; nothing here writes anything, and nothing here
-//! decides whether an operation is allowed. `mealprep-core` checks all of that against
-//! the real data.
+//! The user's correction or question, the conversation it continues and a view of their
+//! plan go to the Messages API, and the reply comes back as tool calls — one per edit —
+//! plus some prose. The tool calls become [`Operation`]s and the prose becomes the
+//! rationale, which for a question is the whole answer; nothing here writes anything, and
+//! nothing here decides whether an operation is allowed. `mealprep-core` checks all of
+//! that against the real data.
+//!
+//! An answer the rules would refuse goes back to the model once or twice with the reason,
+//! as the error results of its calls, so a request that takes several edits is not lost
+//! to one of them. The tool calls are never run here: they are only ever proposals.
 //!
 //! The key is the user's own, supplied per call by the rules, and the only place it goes
-//! is the `x-api-key` header of this one request.
+//! is the `x-api-key` header of these requests.
 
 mod tool;
 
@@ -36,6 +40,15 @@ const API_VERSION: &str = "2023-06-01";
 /// Room for the thinking the model does before the calls. The answer itself is a handful
 /// of tool calls and two sentences, so this is a ceiling rather than a size.
 const MAX_TOKENS: u32 = 16_000;
+
+/// How hard the model thinks. Below the model's default of `high`: the edits are a handful
+/// of calls over a context it is given whole, the user is waiting on a phone, and a wrong
+/// call is caught and sent back rather than applied.
+const EFFORT: &str = "medium";
+
+/// How often an answer the rules refused is sent back with the reason, after the first.
+/// Most refusals are one call put right in one go, so a second retry is the margin.
+const RETRIES: usize = 2;
 
 /// Long enough for a model that thinks before it answers; short enough that a phone with
 /// no usable connection says so rather than hanging.
@@ -79,7 +92,12 @@ many words, so only name one when they did.
 - One call per edit, and several calls in one reply when the request covers more than one \
 thing. A run of consecutive dates is one call with a date range, not one call per day.
 - A product can only be adjusted where it is an item of the day's own order. A product \
-inside a meal belongs to that meal, which every other day on that meal shares.
+inside a meal belongs to that meal, which every other day on that meal shares. For a meal \
+that differs on some days (\"the same, but with less rice on Friday\"), create a second \
+meal with those amounts and put that on those days.
+- A date with no plan has nothing to add to or adjust. Give it one in the same reply: \
+assign a plan that fits, or create a day plan holding what the request asks for and \
+assign that.
 - An item a day holds twice cannot be named: the app refuses it, because order is the only \
 sequence a day carries. Say which two entries it could be instead of picking one.
 - Any field of a product, meal, day plan or the targets can be changed: a product's \
@@ -149,7 +167,32 @@ impl Assistant for Anthropic {
         history: &[ChatTurn],
         request: &str,
         context: &AssistantContext,
+        check: impl Fn(&[Operation]) -> Result<()> + Send + Sync,
     ) -> Result<Proposal> {
+        let mut messages = conversation(history, request, context)?;
+        let mut retries = 0;
+        loop {
+            let message = self.send(key, &body(&messages)).await?;
+            let proposal = proposal(request, &message)?;
+            let refusal = match check(&proposal.operations) {
+                Ok(()) => return Ok(proposal),
+                Err(error) => error.to_string(),
+            };
+            // Out of retries, the answer goes back as it is and the rules refuse it with
+            // the same reason, which is then the user's to read.
+            if retries == RETRIES {
+                return Ok(proposal);
+            }
+            retries += 1;
+            messages.push(json!({ "role": "assistant", "content": message.content }));
+            messages.push(json!({ "role": "user", "content": refused(&message, &refusal) }));
+        }
+    }
+}
+
+impl Anthropic {
+    /// One call to the Messages API.
+    async fn send(&self, key: &str, body: &Value) -> Result<Message> {
         let url = format!("{}/v1/messages", self.base_url);
         let response = self
             .http
@@ -157,7 +200,7 @@ impl Assistant for Anthropic {
             .header("x-api-key", key)
             .header("anthropic-version", API_VERSION)
             .header(header::ACCEPT, "application/json")
-            .json(&body(history, request, context)?)
+            .json(body)
             .send()
             .await
             .map_err(unavailable)?;
@@ -170,33 +213,71 @@ impl Assistant for Anthropic {
             return Err(failed(status, &text));
         }
 
-        let message: Message = serde_json::from_str(&text).map_err(|source| Error::Internal {
+        serde_json::from_str(&text).map_err(|source| Error::Internal {
             reason: format!("cannot read what the assistant answered: {source}"),
-        })?;
-        proposal(request, message)
+        })
     }
 }
 
-/// The request body: the system prompt, one tool per kind of operation, the conversation
-/// so far, and the user's correction with the context it is about.
-fn body(history: &[ChatTurn], request: &str, context: &AssistantContext) -> Result<Value> {
-    let context = serde_json::to_string(context).map_err(|source| Error::Internal {
-        reason: format!("cannot describe the plan to the assistant: {source}"),
-    })?;
-
-    Ok(json!({
+/// The request body: the system prompt, one tool per kind of operation, and the messages.
+fn body(messages: &[Value]) -> Value {
+    json!({
         "model": MODEL,
         "max_tokens": MAX_TOKENS,
         // Adaptive is the only on-mode on this model, and resolving a sentence onto typed
         // edits over real ids is exactly the work that benefits from it.
         "thinking": { "type": "adaptive" },
-        "system": SYSTEM,
+        "output_config": { "effort": EFFORT },
+        // The tools and the system prompt never change, so they are cached; the tools
+        // come first in the prefix, so this one breakpoint covers both.
+        "system": [{ "type": "text", "text": SYSTEM, "cache_control": { "type": "ephemeral" } }],
         "tools": tool::tools(),
         // Auto rather than forced: "none of these tools can do that" is a useful answer,
         // and a forced call would have to invent something.
         "tool_choice": { "type": "auto" },
-        "messages": messages(history, &format!("<plan>\n{context}\n</plan>\n\n{request}")),
-    }))
+        // And the messages up to the last one, so a retry reads the plan from the cache.
+        "cache_control": { "type": "ephemeral" },
+        "messages": messages,
+    })
+}
+
+/// The messages of a first attempt: the conversation so far, and the user's correction
+/// with the context it is about.
+fn conversation(
+    history: &[ChatTurn],
+    request: &str,
+    context: &AssistantContext,
+) -> Result<Vec<Value>> {
+    let context = serde_json::to_string(context).map_err(|source| Error::Internal {
+        reason: format!("cannot describe the plan to the assistant: {source}"),
+    })?;
+    Ok(messages(
+        history,
+        &format!("<plan>\n{context}\n</plan>\n\n{request}"),
+    ))
+}
+
+/// The answer to an attempt the rules refused: an error for each of its calls, the first
+/// carrying the reason. The calls stand or fall together, so the model is asked for all
+/// of them again rather than for the one that failed.
+fn refused(message: &Message, reason: &str) -> Vec<Value> {
+    message
+        .tool_use_ids()
+        .enumerate()
+        .map(|(index, id)| {
+            let content = if index == 0 {
+                format!(
+                    "The app refused these calls, so none of them was kept: {reason}. \
+                     Make the whole set of calls again with that put right, or none if the \
+                     request cannot be done. Reply to the user as if this were your first \
+                     answer."
+                )
+            } else {
+                "Not kept: the calls were refused together.".to_owned()
+            };
+            json!({ "type": "tool_result", "tool_use_id": id, "content": content, "is_error": true })
+        })
+        .collect()
 }
 
 /// The conversation as alternating turns, ending with `latest`.
@@ -237,11 +318,12 @@ fn noted(note: Option<&str>, text: &str) -> String {
 }
 
 /// Reads the answer: the tool calls are the operations, the prose is the rationale.
-fn proposal(request: &str, message: Message) -> Result<Proposal> {
+fn proposal(request: &str, message: &Message) -> Result<Proposal> {
     if message.stop_reason.as_deref() == Some("refusal") {
         let detail = message
             .stop_details
-            .and_then(|details| details.explanation)
+            .as_ref()
+            .and_then(|details| details.explanation.clone())
             .unwrap_or_else(|| "it gave no reason".to_owned());
         return Err(Error::Invalid {
             entity: Entity::AssistantRequest,
@@ -257,11 +339,13 @@ fn proposal(request: &str, message: Message) -> Result<Proposal> {
 
     let mut prose: Vec<String> = Vec::new();
     let mut operations: Vec<Operation> = Vec::new();
-    for block in message.content {
+    for block in message.blocks() {
         match block {
             Block::Text { text } if !text.trim().is_empty() => prose.push(text.trim().to_owned()),
             Block::Text { .. } => {}
-            Block::ToolUse { name, input } => operations.push(tool::operation(&name, input)?),
+            Block::ToolUse { name, input, .. } => {
+                operations.push(tool::operation(&name, input)?);
+            }
             // Thinking blocks and anything a later API version adds: not ours to read.
             Block::Other => {}
         }
@@ -320,12 +404,30 @@ fn unavailable(source: reqwest::Error) -> Error {
 
 #[derive(Deserialize)]
 struct Message {
+    /// Kept as it came: a retry sends it back unchanged, thinking blocks and their
+    /// signatures included, and reads it through [`Message::blocks`].
     #[serde(default)]
-    content: Vec<Block>,
+    content: Vec<Value>,
     #[serde(default)]
     stop_reason: Option<String>,
     #[serde(default)]
     stop_details: Option<StopDetails>,
+}
+
+impl Message {
+    /// The blocks this crate reads; one it cannot is [`Block::Other`].
+    fn blocks(&self) -> impl Iterator<Item = Block> + '_ {
+        self.content
+            .iter()
+            .map(|block| Block::deserialize(block).unwrap_or(Block::Other))
+    }
+
+    fn tool_use_ids(&self) -> impl Iterator<Item = String> + '_ {
+        self.blocks().filter_map(|block| match block {
+            Block::ToolUse { id, .. } => Some(id),
+            _ => None,
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -335,6 +437,7 @@ enum Block {
         text: String,
     },
     ToolUse {
+        id: String,
         name: String,
         input: Value,
     },
@@ -361,14 +464,22 @@ struct ApiErrorBody {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use mealprep_core::domain::{DateRange, Macros, Unit, parse_iso_date};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
     use uuid::uuid;
 
     use super::*;
 
-    /// Recorded answers. No live call is made by this crate's tests: the request shape and
-    /// the mapping back are what is under test, and both are pure.
+    /// Recorded answers. No live call is made by this crate's tests: the request shape, the
+    /// mapping back and the retries are what is under test, the last against a local
+    /// stand-in for the API.
     const PROPOSAL: &str = include_str!("../fixtures/proposal.json");
+    const CORRECTED: &str = include_str!("../fixtures/corrected.json");
     const NOTHING_TO_DO: &str = include_str!("../fixtures/nothing-to-do.json");
     const REFUSAL: &str = include_str!("../fixtures/refusal.json");
     const CUT_OFF: &str = include_str!("../fixtures/cut-off.json");
@@ -410,11 +521,16 @@ mod tests {
 
     #[test]
     fn the_request_carries_the_model_the_tools_and_the_plan() {
-        let body = body(&[], "next 4 days I have 40 g less whey", &context()).unwrap();
+        let body =
+            body(&conversation(&[], "next 4 days I have 40 g less whey", &context()).unwrap());
 
         assert_eq!(body["model"], MODEL);
         assert_eq!(body["thinking"]["type"], "adaptive");
+        assert_eq!(body["output_config"]["effort"], EFFORT);
         assert_eq!(body["tool_choice"]["type"], "auto");
+        // The unchanging prefix is cached, and so is the plan for a retry.
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(body["cache_control"]["type"], "ephemeral");
         assert_eq!(
             body["tools"].as_array().unwrap().len(),
             mealprep_core::domain::OperationKind::ALL.len()
@@ -444,7 +560,7 @@ mod tests {
                 outcome: TurnOutcome::Answered,
             },
         ];
-        let body = body(&history, "make it 30 g instead", &context()).unwrap();
+        let body = body(&conversation(&history, "make it 30 g instead", &context()).unwrap());
         let messages = body["messages"].as_array().unwrap();
 
         let roles: Vec<&str> = messages
@@ -471,7 +587,7 @@ mod tests {
 
     #[test]
     fn tool_calls_become_operations_and_the_prose_becomes_the_rationale() {
-        let proposal = proposal("next 4 days I have 40 g less whey", parse(PROPOSAL)).unwrap();
+        let proposal = proposal("next 4 days I have 40 g less whey", &parse(PROPOSAL)).unwrap();
 
         assert_eq!(proposal.request, "next 4 days I have 40 g less whey");
         assert_eq!(
@@ -493,20 +609,20 @@ mod tests {
 
     #[test]
     fn proposing_nothing_with_a_reason_is_a_valid_answer() {
-        let proposal = proposal("make it healthier", parse(NOTHING_TO_DO)).unwrap();
+        let proposal = proposal("make it healthier", &parse(NOTHING_TO_DO)).unwrap();
         assert!(proposal.operations.is_empty());
         assert!(proposal.rationale.contains("which product"));
     }
 
     #[test]
     fn a_refusal_and_a_cut_off_answer_are_failures_rather_than_empty_proposals() {
-        let Err(Error::Invalid { reason, .. }) = proposal("...", parse(REFUSAL)) else {
+        let Err(Error::Invalid { reason, .. }) = proposal("...", &parse(REFUSAL)) else {
             panic!("a refusal is not a proposal");
         };
         assert!(reason.contains("declined"), "{reason}");
 
         assert!(matches!(
-            proposal("...", parse(CUT_OFF)),
+            proposal("...", &parse(CUT_OFF)),
             Err(Error::AssistantUnavailable { .. })
         ));
     }
@@ -532,5 +648,135 @@ mod tests {
             failed(StatusCode::BAD_REQUEST, "{}"),
             Error::Internal { .. }
         ));
+    }
+
+    /// A Messages API on a local port that answers each request with the next of
+    /// `answers`, and the bodies it was sent.
+    async fn messages_api(answers: Vec<&'static str>) -> (Anthropic, Arc<Mutex<Vec<Value>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&sent);
+        tokio::spawn(async move {
+            for answer in answers {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let body = read_body(&mut socket).await;
+                seen.lock()
+                    .unwrap()
+                    .push(serde_json::from_slice(&body).unwrap());
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                     content-length: {}\r\nconnection: close\r\n\r\n{answer}",
+                    answer.len()
+                );
+                socket.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+        (Anthropic::with_base_url(&base_url).unwrap(), sent)
+    }
+
+    /// The body of one request: the headers, then as much as they say there is.
+    async fn read_body(socket: &mut tokio::net::TcpStream) -> Vec<u8> {
+        let mut request = Vec::new();
+        let mut chunk = [0; 8192];
+        loop {
+            let read = socket.read(&mut chunk).await.unwrap();
+            request.extend_from_slice(&chunk[..read]);
+            let Some(end) = request.windows(4).position(|window| window == b"\r\n\r\n") else {
+                continue;
+            };
+            let headers = String::from_utf8_lossy(&request[..end]);
+            let length: usize = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse().unwrap())
+                })
+                .unwrap();
+            if request.len() >= end + 4 + length {
+                return request[end + 4..end + 4 + length].to_vec();
+            }
+        }
+    }
+
+    /// The rules as the test stands them in: 40 g is more whey than any day has.
+    fn refuse_forty_grams(operations: &[Operation]) -> Result<()> {
+        let too_much = operations.iter().any(|operation| {
+            matches!(
+                operation,
+                Operation::AdjustProductAmount { delta_amount, .. } if *delta_amount < -30.0
+            )
+        });
+        if too_much {
+            return Err(Error::Invalid {
+                entity: Entity::AssistantRequest,
+                reason: "2026-10-20 has 30 g of Whey, so 40 g cannot come off".to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn an_answer_the_rules_accept_is_asked_for_once() {
+        let (assistant, sent) = messages_api(vec![CORRECTED]).await;
+        let proposal = assistant
+            .propose("key", &[], "20 g less whey", &context(), refuse_forty_grams)
+            .await
+            .unwrap();
+
+        assert_eq!(proposal.operations.len(), 1);
+        assert_eq!(sent.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_refused_answer_goes_back_with_the_reason_and_the_next_one_is_kept() {
+        let (assistant, sent) = messages_api(vec![PROPOSAL, CORRECTED]).await;
+        let proposal = assistant
+            .propose("key", &[], "40 g less whey", &context(), refuse_forty_grams)
+            .await
+            .unwrap();
+
+        // The second answer, prose and all; the first one's never reaches the user.
+        assert_eq!(
+            proposal.rationale,
+            "Took 20 g off the scoop of whey on each of the next four days."
+        );
+        let [Operation::AdjustProductAmount { delta_amount, .. }] = proposal.operations[..] else {
+            panic!("one adjustment: {:?}", proposal.operations);
+        };
+        assert_eq!(delta_amount, -20.0);
+
+        let sent = sent.lock().unwrap();
+        assert_eq!(sent.len(), 2);
+        let messages = sent[1]["messages"].as_array().unwrap();
+        // The first attempt, then the answer to it: the plan is not sent twice.
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0], sent[0]["messages"][0]);
+
+        // The model's own turn goes back as it came, thinking block included.
+        let first: Value = serde_json::from_str(PROPOSAL).unwrap();
+        assert_eq!(messages[1]["role"], "assistant");
+        assert_eq!(messages[1]["content"], first["content"]);
+
+        let results = messages[2]["content"].as_array().unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["type"], "tool_result");
+        assert_eq!(results[0]["tool_use_id"], "toolu_01DemoAdjust");
+        assert_eq!(results[0]["is_error"], true);
+        let reason = results[0]["content"].as_str().unwrap();
+        assert!(reason.contains("40 g cannot come off"), "{reason}");
+    }
+
+    #[tokio::test]
+    async fn after_the_last_retry_the_answer_goes_back_for_the_rules_to_refuse() {
+        let (assistant, sent) = messages_api(vec![PROPOSAL; RETRIES + 1]).await;
+        let proposal = assistant
+            .propose("key", &[], "40 g less whey", &context(), refuse_forty_grams)
+            .await
+            .unwrap();
+
+        assert!(refuse_forty_grams(&proposal.operations).is_err());
+        assert_eq!(sent.lock().unwrap().len(), RETRIES + 1);
     }
 }

@@ -67,6 +67,7 @@ impl Assistant for ScriptedAssistant {
         _history: &[ChatTurn],
         request: &str,
         _context: &AssistantContext,
+        _check: impl Fn(&[Operation]) -> Result<()> + Send + Sync,
     ) -> Result<Proposal> {
         Ok(Proposal {
             request: request.to_owned(),

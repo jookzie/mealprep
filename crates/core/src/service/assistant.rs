@@ -564,9 +564,19 @@ where
         let key = self.assistant_key().await?;
         let world = self.load_world().await?;
 
+        // A sync's catalogue entry is fetched once the answer is final, so a sync is left
+        // out of this check and refused, if it is, by the one after the fetch.
+        let check = |operations: &[Operation]| {
+            let fetched: Vec<Operation> = operations
+                .iter()
+                .filter(|operation| !matches!(operation, Operation::SyncProduct { .. }))
+                .cloned()
+                .collect();
+            resolve(&world, &request, &fetched).map(drop)
+        };
         let answer = self
             .assistant
-            .propose(&key, &history, &request, &world.context())
+            .propose(&key, &history, &request, &world.context(), check)
             .await?;
         // The request is ours, not the assistant's: a proposal that reworded it would put
         // a sentence the user never typed above the confirmation and into the log.

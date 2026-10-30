@@ -65,7 +65,8 @@ fn schema(kind: OperationKind) -> Value {
         ),
 
         OperationKind::AddItem => (
-            "Put another meal, or a product on its own, at the end of those days' order.",
+            "Put another meal, or a product on its own, at the end of those days' order. \
+             Every one of those days has to have a plan already.",
             json!({ "dates": dates(), "item": day_plan_item() }),
         ),
 
