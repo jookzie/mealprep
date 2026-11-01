@@ -16,7 +16,7 @@
 				{#each rows as row (row.key)}
 					<tr>
 						<th scope="row" class:indent={row.depth === 1}>{row.label}</th>
-						<td>{formatGrams(row.value).replace(' g', '')}</td>
+						<td>{formatGrams(row.value, true).replace(' g', '')}</td>
 					</tr>
 				{/each}
 			</tbody>

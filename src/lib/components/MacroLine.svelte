@@ -2,14 +2,15 @@
 	import type { Macros } from '$lib/api';
 	import { formatGrams, formatKcal } from '$lib/domain/format';
 
-	let { macros }: { macros: Macros } = $props();
+	/** `precise` keeps a tenth of a gram, for editors; overviews show whole grams. */
+	let { macros, precise = false }: { macros: Macros; precise?: boolean } = $props();
 </script>
 
 <span class="macro-line">
 	<strong>{formatKcal(macros.energyKcal)}</strong>
-	<span><i style:background="var(--protein)"></i>P {formatGrams(macros.proteinG)}</span>
-	<span><i style:background="var(--fat)"></i>F {formatGrams(macros.fatG)}</span>
-	<span><i style:background="var(--carbs)"></i>C {formatGrams(macros.carbohydratesG)}</span>
+	<span><i style:background="var(--protein)"></i>P {formatGrams(macros.proteinG, precise)}</span>
+	<span><i style:background="var(--fat)"></i>F {formatGrams(macros.fatG, precise)}</span>
+	<span><i style:background="var(--carbs)"></i>C {formatGrams(macros.carbohydratesG, precise)}</span>
 </span>
 
 <style>

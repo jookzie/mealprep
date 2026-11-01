@@ -108,7 +108,7 @@
 		const amount = row.amount ?? 0;
 		return {
 			name: product?.name ?? 'Product removed',
-			detail: formatAmount(amount, product?.unit),
+			detail: formatAmount(amount, product?.unit, true),
 			macros: product ? servingMacros(product.macros, amount) : ZERO_MACROS,
 			cost: servingCost(product, amount),
 		};
@@ -200,7 +200,7 @@
 							/>
 						{/if}
 						{#if shown}
-							<MacroLine macros={shown.macros} />
+							<MacroLine macros={shown.macros} precise />
 						{/if}
 					</li>
 				{/each}
@@ -214,7 +214,7 @@
 
 	<section class="card stack" aria-label="Calculated totals">
 		<h2>Calculated</h2>
-		<MacroMeters actual={totalMacros} target={targets?.macros ?? null} {kilograms} />
+		<MacroMeters actual={totalMacros} target={targets?.macros ?? null} {kilograms} precise />
 		<CostFigure cost={totalCost} label="Cost" />
 	</section>
 

@@ -101,7 +101,7 @@ export function implausibilities({ unit, macros, nutrients }: Figures): string[]
 	];
 	for (const { part, name, whole: total, of } of components) {
 		if (part !== undefined && total !== null && part > total + COMPONENT_SLACK_G) {
-			found.push(`${name} (${formatGrams(part)}) are more than total ${of} (${formatGrams(total)}).`);
+			found.push(`${name} (${formatGrams(part, true)}) are more than total ${of} (${formatGrams(total, true)}).`);
 		}
 	}
 
@@ -110,7 +110,7 @@ export function implausibilities({ unit, macros, nutrients }: Figures): string[]
 		const grams = fatG + proteinG + carbohydratesG + fibre + (nutrient(nutrients, 'salt') ?? 0);
 		if (grams > MAX_GRAMS) {
 			found.push(
-				`Fat, protein, carbs, fibre and salt add up to ${formatGrams(grams)}, more than the 100 g they are measured in.`,
+				`Fat, protein, carbs, fibre and salt add up to ${formatGrams(grams, true)}, more than the 100 g they are measured in.`,
 			);
 		}
 	}
