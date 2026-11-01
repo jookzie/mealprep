@@ -4,6 +4,7 @@ import {
 	listCategories,
 	listDayPlans,
 	loadTargets,
+	loadWeightSeries,
 	read,
 } from '$lib/api';
 import { joinablePlans } from '$lib/domain/assistant';
@@ -18,13 +19,14 @@ export const load: PageLoad = async ({ url }) => {
 	// Two reads of the plans, because they answer two questions: dayPlans is what can be
 	// assigned, and assignedPlans resolves the dates in view — including a date the
 	// assistant has detached onto its own copy, which the list deliberately leaves out.
-	const [days, dayPlans, assignedPlans, targets, categories] = await read(
+	const [days, dayPlans, assignedPlans, targets, categories, weight] = await read(
 		Promise.all([
 			listCalendarDays(from, to),
 			listDayPlans(),
 			listCalendarDayPlans(from, to),
 			loadTargets(),
 			listCategories('day-plan'),
+			loadWeightSeries(),
 		]),
 	);
 	return {
@@ -34,5 +36,6 @@ export const load: PageLoad = async ({ url }) => {
 		joinedPlans: joinablePlans(dayPlans, assignedPlans),
 		targets,
 		categories,
+		kilograms: weight.trend,
 	};
 };

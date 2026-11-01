@@ -120,7 +120,7 @@
 		<span class="muted small">{period.plannedCount} of {period.dayCount} days planned</span>
 	</div>
 	{#if period.averagePerPlannedDay}
-		<MacroMeters actual={period.averagePerPlannedDay} target={period.targetPerDay} />
+		<MacroMeters actual={period.averagePerPlannedDay} target={period.targetPerDay} kilograms={data.kilograms} />
 		<div class="row spread">
 			<CostFigure cost={period.averageCostPerPlannedDay} label="Per day" />
 			<CostFigure cost={period.totalCost} label="All planned days" />

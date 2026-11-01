@@ -20,6 +20,7 @@
 	categories={data.categories}
 	mealCategories={data.mealCategories}
 	targets={data.targets}
+		kilograms={data.kilograms}
 	{draft}
 	submitLabel="Create day plan"
 	onSubmit={(submitted) =>

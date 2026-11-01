@@ -35,7 +35,7 @@
 		<h2>Against targets</h2>
 		<CostFigure cost={plan.cost} label="Cost" />
 	</div>
-	<MacroMeters actual={plan.macros} target={data.targets?.macros ?? null} />
+	<MacroMeters actual={plan.macros} target={data.targets?.macros ?? null} kilograms={data.kilograms} />
 	{#if !data.targets}
 		<p class="muted small"><a href="/targets">Set daily targets</a> to see how this day compares.</p>
 	{/if}

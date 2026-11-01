@@ -45,6 +45,7 @@
 		categories,
 		mealCategories,
 		targets,
+		kilograms,
 		submitLabel,
 		onSubmit,
 	}: {
@@ -56,6 +57,7 @@
 		categories: readonly Category[];
 		mealCategories: readonly Category[];
 		targets: Targets | null;
+		kilograms?: number;
 		submitLabel: string;
 		onSubmit: (draft: DayPlanDraft) => Promise<unknown>;
 	} = $props();
@@ -212,7 +214,7 @@
 
 	<section class="card stack" aria-label="Calculated totals">
 		<h2>Calculated</h2>
-		<MacroMeters actual={totalMacros} target={targets?.macros ?? null} />
+		<MacroMeters actual={totalMacros} target={targets?.macros ?? null} {kilograms} />
 		<CostFigure cost={totalCost} label="Cost" />
 	</section>
 
