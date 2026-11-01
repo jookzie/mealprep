@@ -133,9 +133,9 @@ Nutrients are shown as the four macros, with the full nutrient set behind an exp
 | Day plan list | `/day-plans` | `DP-5`, `TG-2`, `CT-3` |
 | Day plan categories | `/day-plans/categories` | `CT-1`, `CT-2`, `CT-5` |
 | New day plan | `/day-plans/new` | `DP-1`, `DP-2`, `DP-6` |
-| Day plan detail | `/day-plans/[dayPlanId]` | `DP-4`, `TG-2`, `TG-3`, `CO-2` |
+| Day plan detail | `/day-plans/[dayPlanId]` | `DP-4`, `TG-2`, `TG-3`, `TG-5`, `CO-2` |
 | Edit day plan | `/day-plans/[dayPlanId]/edit` | `DP-5`, `DP-6` |
-| Calendar | `/calendar` | `CL-1`–`CL-5`, `TG-2`, `TG-3` |
+| Calendar | `/calendar` | `CL-1`–`CL-5`, `TG-2`, `TG-3`, `TG-5` |
 | Targets | `/targets` | `TG-1`, `WT-6`, `DT-1`–`DT-4` — the macro targets, the weight trend beside them, and exporting or importing the data |
 | Weight | `/weight` | `WT-1`–`WT-7` — quick log, the graph, and the weigh-in history |
 | Assistant | `/assistant` | `AS-1`–`AS-17` — the whole screen is the chat: each request with its preview and Apply or Discard, or the answer to a question; the API key field only while none is stored |
@@ -287,6 +287,7 @@ Medium. New in this version.
 - `TG-2` The system shall show the four planned macros next to the targets.
 - `TG-3` The system shall display deviations from the targets and shall never block or alter a plan because of them.
 - `TG-4` Energy shall be expressed in kcal, mass in grams and volume in millilitres, throughout the product.
+- `TG-5` When there is a weight trend, the meters shall bracket reference ranges per kilogram of it — protein 1.6–2.2 g/kg, fat from 0.5 g/kg, carbs from 1 g/kg — and planned fat under its floor shall show a small amber note. Like the targets, the ranges inform and never block (`TG-3`).
 
 ### 4.10 Weight
 **Description and priority.** What the targets exist to move. Medium. New in this version.
@@ -364,8 +365,8 @@ Out of scope as a target, with one constraint from the platform: the database is
 and every read crosses the IPC bridge, so a screen loads what it displays and nothing more.
 
 ### 5.2 Safety requirements
-None. The application gives no medical or dietary advice and enforces nothing, per `TG-3`
-and `PL-2`.
+None. The application enforces nothing, per `TG-3` and `PL-2`; the reference ranges of
+`TG-5` are common rules of thumb shown for orientation, not medical or dietary advice.
 
 ### 5.3 Security requirements
 The application has no authentication and no transport security of its own: it listens on no
