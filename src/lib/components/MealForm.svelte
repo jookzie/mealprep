@@ -143,7 +143,7 @@
 						</div>
 						<NumberField label="Amount" suffix={product?.unit ?? 'g'} bind:value={row.amount} required />
 						{#if preview[index]}
-							<MacroLine macros={preview[index].macros} />
+							<MacroLine macros={preview[index].macros} precise />
 						{/if}
 					</li>
 				{/each}
@@ -153,7 +153,7 @@
 
 	<section class="card stack" aria-label="Calculated totals">
 		<h2>Calculated</h2>
-		<MacroLine macros={draftMacros(preview)} />
+		<MacroLine macros={draftMacros(preview)} precise />
 		<CostFigure cost={draftCost(preview)} label="Cost" />
 	</section>
 

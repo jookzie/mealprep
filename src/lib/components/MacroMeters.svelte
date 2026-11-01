@@ -8,11 +8,14 @@
 		actual,
 		target,
 		kilograms,
+		precise = false,
 	}: {
 		actual: Macros;
 		target: Macros | null;
 		/** The weight trend; with it the meters bracket the per-kilogram reference ranges. */
 		kilograms?: number;
+		/** Keep a tenth of a gram, for editors; overviews show whole grams. */
+		precise?: boolean;
 	} = $props();
 
 	/** The track runs to 150% of the target, so the target mark sits at two thirds on every row. */
@@ -26,7 +29,7 @@
 	};
 
 	function figure(key: MacroKey, value: number): string {
-		return key === 'energyKcal' ? formatKcal(value) : formatGrams(value);
+		return key === 'energyKcal' ? formatKcal(value) : formatGrams(value, precise);
 	}
 
 	function percent(fraction: number): string {
@@ -57,7 +60,7 @@
 					{figure(key, value)}
 					{#if goal !== null}
 						<span class="muted">/ {figure(key, goal)}</span>
-						<span class="muted">({formatSigned(value - goal, key === 'energyKcal' ? 'kcal' : 'g')})</span>
+						<span class="muted">({formatSigned(value - goal, key === 'energyKcal' ? 'kcal' : 'g', precise)})</span>
 					{/if}
 				</span>
 			</div>

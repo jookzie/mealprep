@@ -286,7 +286,7 @@ Medium. New in this version.
 - `TG-1` The system shall let the user set daily targets for calories, fat, protein and carbohydrates.
 - `TG-2` The system shall show the four planned macros next to the targets.
 - `TG-3` The system shall display deviations from the targets and shall never block or alter a plan because of them.
-- `TG-4` Energy shall be expressed in kcal, mass in grams and volume in millilitres, throughout the product.
+- `TG-4` Energy shall be expressed in kcal, mass in grams and volume in millilitres, throughout the product. Screens that are only read shall show whole numbers; an editor, the warnings it raises and the per-nutrient table shall keep a tenth of a gram.
 - `TG-5` When there is a weight trend, the meters shall bracket reference ranges per kilogram of it — protein 1.6–2.2 g/kg, fat from 0.5 g/kg, carbs from 1 g/kg — and planned fat under its floor shall show a small amber note. Like the targets, the ranges inform and never block (`TG-3`).
 
 ### 4.10 Weight
